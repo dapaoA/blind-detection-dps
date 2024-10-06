@@ -120,6 +120,7 @@ def create_model_for_train(
     use_new_attention_order=False,
     grayscale=False,
     twochan=False,
+    model_path='',
 ):
 
     if grayscale:
@@ -131,7 +132,6 @@ def create_model_for_train(
     else:
         in_channels = 3
         out_channels = 3 if not learn_sigma else 6
-
     if channel_mult == "":
         if image_size == 512:
             channel_mult = (0.5, 1, 1, 2, 2, 4, 4)
@@ -175,6 +175,7 @@ def create_model_for_train(
         use_new_attention_order=use_new_attention_order,
     )
 
+    print("saving model to", model_path)
     return model
 
 

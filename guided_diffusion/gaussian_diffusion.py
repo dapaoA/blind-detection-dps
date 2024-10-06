@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm.auto import tqdm
+import enum
 
 from util.img_utils import clear_color
 from .posterior_mean_variance import get_mean_processor, get_var_processor
@@ -12,6 +13,118 @@ from .posterior_mean_variance import get_mean_processor, get_var_processor
 
 
 __SAMPLER__ = {}
+
+
+class ModelMeanType(enum.Enum):
+    """
+    Which type of output the model predicts.
+    """
+
+    PREVIOUS_X = enum.auto()  # the model predicts x_{t-1}
+    START_X = enum.auto()  # the model predicts x_0
+    EPSILON = enum.auto()  # the model predicts epsilon
+
+
+class LossType(enum.Enum):
+    MSE = enum.auto()  # use raw MSE loss (and KL when learning variances)
+    RESCALED_MSE = (
+        enum.auto()
+    )  # use raw MSE loss (with RESCALED_KL when learning variances)
+    KL = enum.auto()  # use the variational lower-bound
+    RESCALED_KL = enum.auto()  # like KL, but rescale to estimate the full VLB
+
+    def is_vb(self):
+        return self == LossType.KL or self == LossType.RESCALED_KL
+
+
+class ModelVarType(enum.Enum):
+    """
+    What is used as the model's output variance.
+
+    The LEARNED_RANGE option has been added to allow the model to predict
+    values between FIXED_SMALL and FIXED_LARGE, making its job easier.
+    """
+
+    LEARNED = enum.auto()
+    FIXED_SMALL = enum.auto()
+    FIXED_LARGE = enum.auto()
+    LEARNED_RANGE = enum.auto()
+
+
+def mean_flat(tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
+
+
+def normal_kl(mean1, logvar1, mean2, logvar2):
+    """
+    Compute the KL divergence between two gaussians.
+
+    Shapes are automatically broadcasted, so batches can be compared to
+    scalars, among other use cases.
+    """
+    tensor = None
+    for obj in (mean1, logvar1, mean2, logvar2):
+        if isinstance(obj, torch.Tensor):
+            tensor = obj
+            break
+    assert tensor is not None, "at least one argument must be a Tensor"
+
+    # Force variances to be Tensors. Broadcasting helps convert scalars to
+    # Tensors, but it does not work for th.exp().
+    logvar1, logvar2 = [
+        x if isinstance(x, torch.Tensor) else torch.tensor(x).to(tensor)
+        for x in (logvar1, logvar2)
+    ]
+
+    return 0.5 * (
+        -1.0
+        + logvar2
+        - logvar1
+        + torch.exp(logvar1 - logvar2)
+        + ((mean1 - mean2) ** 2) * torch.exp(-logvar2)
+    )
+
+
+def approx_standard_normal_cdf(x):
+    """
+    A fast approximation of the cumulative distribution function of the
+    standard normal.
+    """
+    return 0.5 * (1.0 + torch.tanh(np.sqrt(2.0 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
+
+
+def discretized_gaussian_log_likelihood(x, *, means, log_scales):
+    """
+    Compute the log-likelihood of a Gaussian distribution discretizing to a
+    given image.
+
+    :param x: the target images. It is assumed that this was uint8 values,
+              rescaled to the range [-1, 1].
+    :param means: the Gaussian mean Tensor.
+    :param log_scales: the Gaussian log stddev Tensor.
+    :return: a tensor like x of log probabilities (in nats).
+    """
+    assert x.shape == means.shape == log_scales.shape
+    centered_x = x - means
+    inv_stdv = torch.exp(-log_scales)
+    plus_in = inv_stdv * (centered_x + 1.0 / 255.0)
+    cdf_plus = approx_standard_normal_cdf(plus_in)
+    min_in = inv_stdv * (centered_x - 1.0 / 255.0)
+    cdf_min = approx_standard_normal_cdf(min_in)
+    log_cdf_plus = torch.log(cdf_plus.clamp(min=1e-12))
+    log_one_minus_cdf_min = torch.log((1.0 - cdf_min).clamp(min=1e-12))
+    cdf_delta = cdf_plus - cdf_min
+    log_probs = torch.where(
+        x < -0.999,
+        log_cdf_plus,
+        torch.where(x > 0.999, log_one_minus_cdf_min, torch.log(cdf_delta.clamp(min=1e-12))),
+    )
+    assert log_probs.shape == x.shape
+    return log_probs
+
 
 def register_sampler(name: str):
     def wrapper(cls):
@@ -64,6 +177,9 @@ class GaussianDiffusion:
                  ):
 
         # use float64 for accuracy.
+        self.loss_type = LossType.MSE
+        self.model_var_type = ModelVarType[model_var_type.upper()]
+        self.model_mean_type = ModelMeanType[model_mean_type.upper()]
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
         assert self.betas.ndim == 1, "betas must be 1-D"
@@ -126,7 +242,7 @@ class GaussianDiffusion:
 
         return mean, variance, log_variance
 
-    def q_sample(self, x_start, t):
+    def q_sample(self, x_start, t, noise=None):
         """
         Diffuse the data for a given number of diffusion steps.
 
@@ -137,7 +253,8 @@ class GaussianDiffusion:
         :param noise: if specified, the split-out normal noise.
         :return: A noisy version of x_start.
         """
-        noise = torch.randn_like(x_start)
+        if noise is None:
+            noise = torch.randn_like(x_start)
         assert noise.shape == x_start.shape
         
         coef1 = extract_and_expand(self.sqrt_alphas_cumprod, t, x_start)
@@ -186,19 +303,22 @@ class GaussianDiffusion:
             
             img = img.requires_grad_()
             out = self.p_sample(x=img, t=time, model=model)
-            
-            # Give condition.
-            noisy_measurement = self.q_sample(measurement, t=time)
+            if measurement_cond_fn is not None:
+                # Give condition.
+                noisy_measurement = self.q_sample(measurement, t=time)
 
-            # TODO: how can we handle argument for different condition method?
-            img, distance = measurement_cond_fn(x_t=out['sample'],
+                # TODO: how can we handle argument for different condition method?
+                img, distance = measurement_cond_fn(x_t=out['sample'],
                                       measurement=measurement,
                                       noisy_measurement=noisy_measurement,
                                       x_prev=img,
                                       x_0_hat=out['pred_xstart'])
+            else:
+                img = out['sample']
+                distance = None
             img = img.detach_()
-           
-            pbar.set_postfix({'distance': distance.item()}, refresh=False)
+            if measurement_cond_fn is not None:
+                pbar.set_postfix({'distance': distance.item()}, refresh=False)
             if record:
                 if idx % 10 == 0:
                     file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
@@ -236,6 +356,115 @@ class GaussianDiffusion:
         if self.rescale_timesteps:
             return t.float() * (1000.0 / self.num_timesteps)
         return t
+    
+    # def training_losses(self, model, x_start, t):
+    #     x_t = self.q_sample(x_start, t)
+    #     model_output = model(x_t, self._scale_timesteps(t))
+    #     loss = torch.nn.functional.mse_loss(model_output, x_start)
+    #     return {'loss': loss}
+    
+
+
+    def training_losses(self, model, x_start, t):
+        """
+        Compute training losses for a single timestep.
+
+        :param model: the model to evaluate loss on.
+        :param x_start: the [N x C x ...] tensor of inputs.
+        :param t: a batch of timestep indices.
+        :return: a dict with the key "loss" containing a tensor of shape [N].
+                 Some mean or variance settings may also have other keys.
+        """
+        noise = torch.randn_like(x_start)
+        x_t = self.q_sample(x_start, t, noise)
+
+        terms = {}
+
+        if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
+            terms["loss"] = self._vb_terms_bpd(
+                model=model,
+                x_start=x_start,
+                x_t=x_t,
+                t=t
+            )["output"]
+            if self.loss_type == LossType.RESCALED_KL:
+                terms["loss"] *= self.num_timesteps
+        elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+            model_output = model(x_t, self._scale_timesteps(t))
+
+            if self.model_var_type in [
+                ModelVarType.LEARNED,
+                ModelVarType.LEARNED_RANGE,
+            ]:
+                B, C = x_t.shape[:2]
+                assert model_output.shape == (B, C * 2, *x_t.shape[2:])
+                model_output, model_var_values = torch.split(model_output, C, dim=1)
+                # Learn the variance using the variational bound, but don't let
+                # it affect our mean prediction.
+                frozen_out = torch.cat([model_output.detach(), model_var_values], dim=1)
+                terms["vb"] = self._vb_terms_bpd(
+                    model=lambda *args, r=frozen_out: r,
+                    x_start=x_start,
+                    x_t=x_t,
+                    t=t
+                )["output"]
+                if self.loss_type == LossType.RESCALED_MSE:
+                    # Divide by 1000 for equivalence with initial implementation.
+                    # Without a factor of 1/1000, the VB term hurts the MSE term.
+                    terms["vb"] *= self.num_timesteps / 1000.0
+
+            target = {
+                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+                    x_start=x_start, x_t=x_t, t=t
+                )[0],
+                ModelMeanType.START_X: x_start,
+                ModelMeanType.EPSILON: noise,
+            }[self.model_mean_type]
+            assert model_output.shape == target.shape == x_start.shape
+            terms["mse"] = mean_flat((target - model_output) ** 2)
+            if "vb" in terms:
+                terms["loss"] = terms["mse"] + terms["vb"]
+            else:
+                terms["loss"] = terms["mse"]
+        else:
+            raise NotImplementedError(self.loss_type)
+
+        return terms
+
+
+    def _vb_terms_bpd(
+        self, model, x_start, x_t, t
+    ):
+        """
+        Get a term for the variational lower-bound.
+
+        The resulting units are bits (rather than nats, as one might expect).
+        This allows for comparison to other papers.
+
+        :return: a dict with the following keys:
+                 - 'output': a shape [N] tensor of NLLs or KLs.
+                 - 'pred_xstart': the x_0 predictions.
+        """
+        true_mean, _, true_log_variance_clipped = self.q_posterior_mean_variance(
+            x_start=x_start, x_t=x_t, t=t
+        )
+        out = self.p_mean_variance(model, x_t, t)
+        kl = normal_kl(
+            true_mean, true_log_variance_clipped, out["mean"], out["log_variance"]
+        )
+        kl = mean_flat(kl) / np.log(2.0)
+
+        decoder_nll = -discretized_gaussian_log_likelihood(
+            x_start, means=out["mean"], log_scales=0.5 * out["log_variance"]
+        )
+        assert decoder_nll.shape == x_start.shape
+        decoder_nll = mean_flat(decoder_nll) / np.log(2.0)
+
+        # At the first timestep return the decoder NLL,
+        # otherwise return KL(q(x_{t-1}|x_t,x_0) || p(x_{t-1}|x_t))
+        output = torch.where((t == 0), decoder_nll, kl)
+        return {"output": output, "pred_xstart": out["pred_xstart"]}
+
 
 def space_timesteps(num_timesteps, section_counts):
     """
@@ -367,13 +596,10 @@ class DDPM(SpacedDiffusion):
         sample = out['mean']
 
         noise = torch.randn_like(x)
-        if t != 0:  # no noise when t == 0
-            noisy_sample = sample + torch.exp(0.5 * out['log_variance']) * noise
-        else:
-            noisy_sample = sample + noise * t
+        mask = (t != 0).float().unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        noisy_sample = sample + mask * torch.exp(0.5 * out['log_variance']) * noise
 
         return {'sample': noisy_sample, 'pred_xstart': out['pred_xstart']}
-    
 
 @register_sampler(name='ddim')
 class DDIM(SpacedDiffusion):

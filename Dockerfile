@@ -19,6 +19,6 @@ RUN pip install -r ./requirements.txt
 #### 3. Clone external codes
 RUN git clone https://github.com/VinAIResearch/blur-kernel-space-exploring bkse
 RUN git clone https://github.com/LeviBorodenko/motionblur motionblur
-
+VOLUME ["/usr/app/bkse", "/usr/app/motionblur"]
 #### 4. change user
 RUN useradd docker_user -u 1000 -m
