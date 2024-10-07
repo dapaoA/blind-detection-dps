@@ -1,2 +1,2 @@
 # Ignore all .pth files in generated_images directory
-generated_images/*.pth
+*.pth

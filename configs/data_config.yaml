@@ -1,3 +1,6 @@
+# data:
+#   name: leather
+#   root: ./data/leather/train/good/
 data:
-  name: leather
-  root: ./data/leather/train/good/
+  name: bottle
+  root: ./data/bottle/train/good/

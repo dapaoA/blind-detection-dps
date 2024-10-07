@@ -45,12 +45,12 @@ def generate_and_save_images(epoch, model, sampler, device, out_path, sample_fn)
         axs[i//5, i%5].axis('off')
     
     plt.tight_layout()
-    os.makedirs(os.path.join(out_path, 'generated_images'), exist_ok=True)
-    plt.savefig(os.path.join(out_path, 'generated_images', f'epoch_{epoch+1}.png'))
+    os.makedirs(os.path.join(out_path, 'generated_images_for_debug'), exist_ok=True)
+    plt.savefig(os.path.join(out_path, 'generated_images_for_debug', f'epoch_{epoch+1}.png'))
     plt.close()
     model.train()
 
-def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=50):
+def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10):
     model.train()
 
     for epoch in range(epochs):
