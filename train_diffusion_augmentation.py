@@ -147,7 +147,7 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    batch_size = 64
+    batch_size = 256
     sample_interval = 100
     dataset = get_dataset(**data_config, transforms=transform)
     
