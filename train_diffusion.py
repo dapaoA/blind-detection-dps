@@ -45,12 +45,12 @@ def generate_and_save_images(epoch, model, sampler, device, out_path, sample_fn)
         axs[i//5, i%5].axis('off')
     
     plt.tight_layout()
-    os.makedirs(os.path.join(out_path, 'generated_images_for_debug'), exist_ok=True)
-    plt.savefig(os.path.join(out_path, 'generated_images_for_debug', f'epoch_{epoch+1}.png'))
+    os.makedirs(os.path.join(out_path, 'generated_images_for_debug_bottom'), exist_ok=True)
+    plt.savefig(os.path.join(out_path, 'generated_images_for_debug_bottom', f'epoch_{epoch+1}.png'))
     plt.close()
     model.train()
 
-def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10):
+def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10, save_interval=100):
     model.train()
 
     for epoch in range(epochs):
@@ -60,7 +60,7 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
             optimizer.zero_grad()
             # Move data to device
             x_start = batch.to(device)
-
+            print(x_start.shape)
             # Generate random timesteps
             t = torch.randint(0, sampler.num_timesteps, (x_start.shape[0],), device=device).long()
             
@@ -86,13 +86,13 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
             generate_and_save_images(epoch, model, sampler, device, out_path, sample_fn)
         
         # Save checkpoint
-        if (epoch + 1) % 100 == 0:
+        if (epoch + 1) % save_interval == 0:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, os.path.join(out_path, f'checkpoint_epoch_{epoch+1}.pth'))
+            }, os.path.join(out_path, f'checkpoint_epoch_bottom_{epoch+1}.pth'))
 
     # Move model back to CPU to free up GPU memory
     model.to('cpu')
@@ -141,17 +141,18 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    batch_size = 64
+    batch_size = 32
+    sample_interval = 100
     dataset = get_dataset(**data_config, transforms=transform)
-    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=0, train=True)
+    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=4, train=True)
 
     # Set up optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     # Train the model
-    num_epochs = 1000  # Adjust as needed
-    batch_size = 50
-    train(model, loader, sampler, optimizer, num_epochs, device, batch_size, logger, args.save_dir, sample_fn)
+    num_epochs = 10000  # Adjust as needed
+    save_interval = 500
+    train(model, loader, sampler, optimizer, num_epochs, device, batch_size, logger, args.save_dir, sample_fn, sample_interval, save_interval)
 
     logger.info("Training completed.")
 

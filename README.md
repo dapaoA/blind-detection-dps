@@ -81,9 +81,13 @@ Dockerfile already contains command to clone external codes. You don't have to c
 ```
 docker build -t blind-dps-docker:latest .
 
-docker run -it --rm --gpus=all blind-dps-docker
+docker run -it --rm --gpus=all blind-dps-docker -v {PATH_TO_BKSE}:/usr/app/bkse -v {PATH_TO_MOTIONBLUR}:/usr/app/motionblur
 ```
-
+docker run -it --rm --gpus=all `
+  -v ${PWD}:/usr/app:rw `
+  -v ./motionblur:/usr/app/motionblur:ro `
+  -v ./bkse:/usr/app/bkse:ro `
+  blind-dps-docker
 
 ### 4) Inference
 
