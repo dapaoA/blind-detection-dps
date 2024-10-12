@@ -1,2 +1,6 @@
 # Ignore all .pth files in generated_images directory
 *.pth
+generated_images/
+batch_visualizations/
+generated_images_for_debug/
+generated_images_for_debug_bottom/
