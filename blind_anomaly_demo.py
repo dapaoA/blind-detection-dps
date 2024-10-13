@@ -28,7 +28,7 @@ def main():
     # Configurations
     parser = argparse.ArgumentParser()
     parser.add_argument('--img_model_config', type=str, default='configs/model_config.yaml')
-    parser.add_argument('--segment_model_config', type=str, default='configs/segment_model_config.yaml')
+    parser.add_argument('--kernel_model_config', type=str, default='configs/kernel_model_config.yaml')
     parser.add_argument('--diffusion_config', type=str, default='configs/diffusion_config.yaml')
     parser.add_argument('--task_config', type=str, default='configs/motion_deblur_config.yaml')
     # Training
@@ -50,23 +50,23 @@ def main():
     
     # Load configurations
     img_model_config = load_yaml(args.img_model_config)
-    segment_model_config = load_yaml(args.segment_model_config)
+    kernel_model_config = load_yaml(args.kernel_model_config)
     diffusion_config = load_yaml(args.diffusion_config)
     task_config = load_yaml(args.task_config)
 
-    # Segment configs to namespace save space
-    args.segment = task_config["segment"]
-    args.segment_size = task_config["segment_size"]
+    # Kernel configs to namespace save space
+    args.kernel = task_config["kernel"]
+    args.kernel_size = task_config["kernel_size"]
     args.intensity = task_config["intensity"]
    
     # Load model
     img_model = create_model(**img_model_config)
     img_model = img_model.to(device)
     img_model.eval()
-    segment_model = create_model(**segment_model_config)
-    segment_model = segment_model.to(device)
-    segment_model.eval()
-    model = {'img': img_model, 'segment': segment_model}
+    kernel_model = create_model(**kernel_model_config)
+    kernel_model = kernel_model.to(device)
+    kernel_model.eval()
+    model = {'img': img_model, 'kernel': kernel_model}
 
     # Prepare Operator and noise
     measure_config = task_config['measurement']

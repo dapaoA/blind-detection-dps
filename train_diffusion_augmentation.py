@@ -160,7 +160,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     # Train the model
-    num_epochs = 10000  # Adjust as needed
+    num_epochs = 1000  # Adjust as needed
     save_interval = 500
     train(model, loader, sampler, optimizer, num_epochs, device, batch_size, logger, args.save_dir, sample_fn, sample_interval, save_interval)
 

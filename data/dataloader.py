@@ -3,7 +3,8 @@ from PIL import Image
 from typing import Callable, Optional
 from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
-
+import h5py
+import numpy as np
 
 __DATASET__ = {}
 
@@ -120,6 +121,66 @@ class BottleDataset(VisionDataset):
     def __getitem__(self, index: int):
         fpath = self.fpaths[index]
         img = Image.open(fpath).convert('RGB')
+        
+        if self.transforms is not None:
+            img = self.transforms(img)
+        
+        return img
+
+
+@register_dataset(name='toothbrush')
+class ToothbrushDataset(VisionDataset):
+    def __init__(self, root: str, transforms: Optional[Callable]=None):
+        super().__init__(root, transforms)
+
+        self.fpaths = sorted(glob(root + '/**/*.png', recursive=True))
+        assert len(self.fpaths) > 0, "File list is empty. Check the root."
+
+    def __len__(self):
+        return len(self.fpaths)
+
+    def __getitem__(self, index: int):
+        fpath = self.fpaths[index]
+        img = Image.open(fpath).convert('RGB')
+        
+        if self.transforms is not None:
+            img = self.transforms(img)
+        
+        return img
+
+
+@register_dataset(name='BraTS')
+class BraTSDataset(VisionDataset):
+    def __init__(self, root: str, transforms: Optional[Callable]=None):
+        super().__init__(root, transforms)
+
+        self.fpaths = sorted(glob(root + '/**/*.h5', recursive=True))
+        assert len(self.fpaths) > 0, "File list is empty. Check the root."
+
+    def __len__(self):
+        return len(self.fpaths)
+
+    def __getitem__(self, index: int):
+        fpath = self.fpaths[index]
+        with h5py.File(fpath, 'r') as hf:
+            print("hf image: ", hf['image'] )
+            img = np.array(hf['image'][:])
+        
+        # Save each channel as a separate black and white PNG
+        for i in range(4):
+            print(img[:, :, i])
+            channel = img[:, :, i].astype(np.float64)
+            print("channel: ", channel)
+            print("channel max: ", channel.max())
+            channel_img = Image.fromarray(channel, mode='L')
+            save_path = fpath.replace('.h5', f'_channel_{i+1}.png')
+            channel_img.save(save_path, format='PNG')
+            print(f"Saved {save_path}")
+
+        exit()
+        
+        # For the purpose of returning an image, we'll use the first channel
+        img = Image.fromarray(img[:, :, 0].astype(np.uint8), mode='L')
         
         if self.transforms is not None:
             img = self.transforms(img)

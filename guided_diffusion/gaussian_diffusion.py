@@ -727,6 +727,78 @@ class BlindDPS(DDPM):
 # 
         return updated
 
+
+@register_sampler(name='blind_fdps')
+class BlindFDPS(DDPM):
+    def p_sample_loop(self, 
+                      model: dict,
+                      x_start: dict,
+                      measurement,
+                      measurement_cond_fn,
+                      record,
+                      save_root):
+       
+        assert isinstance(model, dict) and isinstance(x_start, dict)
+        
+        # initialize 
+        x_prev = x_start 
+        device = list(x_prev.values())[0].device 
+        batch_size = list(x_prev.values())[0].shape[0]
+        
+        pbar = tqdm(list(range(self.num_timesteps))[::-1])
+        for idx in pbar:
+            time = torch.tensor([idx] * batch_size, device=device)
+
+            x_prev = dict((k, v.requires_grad_()) for k, v in x_prev.items())
+            
+            # diffusion prior cases 
+            output = dict() 
+            for k in model:
+                output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})  
+            
+            # uniform prior cases 
+            for k in x_prev:
+                if output.get(k, None) is None:
+                    output.update({k: x_prev[k]})
+        
+            # Normalize the kernel (TODO: can we generalize this part?)
+            kernel_hatx0 = output['kernel']['pred_xstart'] 
+            kernel_hatx0 = (kernel_hatx0 + 1.0) / 2.0
+            kernel_hatx0 /= kernel_hatx0.sum()
+            output['kernel'].update({'pred_xstart': kernel_hatx0})
+
+            # give condition
+            noisy_measurement = self.q_sample(measurement, t=time)
+            x_t = dict((k, v['sample']) for k, v in output.items())
+            x_0_hat = dict((k, v['pred_xstart']) for k, v in output.items())
+            
+            # Here, we implement gradually increasing scale that shows stable performance,
+            # while we reported the result with a constant scale in the paper.
+            scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
+            scale = {k: scale for k in output.keys()}
+            updated, norm = measurement_cond_fn(x_t=x_t,
+                                                measurement=measurement,
+                                                noisy_measurement=noisy_measurement,
+                                                x_prev=x_prev,
+                                                x_0_hat=x_0_hat,
+                                                scale=scale)
+            
+            updated = dict((k, v.detach_()) for k, v in updated.items())
+            x_prev = updated
+
+            pbar.set_postfix({'norm': norm.item()}, refresh=False)
+
+            if record:
+                if idx % 10 == 0:
+                    for k, v in updated.items():
+                        save_dir = os.path.join(save_root, f'progress/{k}')
+                        if not os.path.isdir(save_dir):
+                            os.makedirs(save_dir, exist_ok=True)
+                        file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
+                        plt.imsave(file_path, clear_color(v))
+# 
+        return updated
+
 # =================
 # Helper functions
 # =================
