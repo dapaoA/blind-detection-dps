@@ -23,18 +23,18 @@ def load_yaml(file_path: str) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image):
+def generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image, std_image):
     model.eval()
     images = []
     with torch.no_grad():
         x_start = torch.randn(10, 3, model.image_size, model.image_size).to(device)
         samples = sample_fn(x_start=x_start, measurement=None, record=False, save_root=out_path)
         
-        # Add mean image to the generated samples
-        samples = samples + mean_image.to(device)
+        # Denormalize the generated samples
+        samples = samples * std_image.to(device) + mean_image.to(device)
         
-        # Denormalize and convert to PIL images
-        samples = (samples.clamp(-1, 1) + 1) / 2
+        # Clip values to [0, 1] range and convert to PIL images
+        samples = torch.clamp(samples, 0, 1)
         samples = (samples * 255).byte().cpu().numpy()
         
         for i in range(10):
@@ -54,7 +54,7 @@ def generate_and_save_images(epoch, model, sampler, device, out_path, dataset_na
     plt.close()
     model.train()
 
-def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10, save_interval=100, mean_image=None, dataset_name=None, folder_name='generated_images'):
+def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10, save_interval=100, mean_image=None, std_image=None, dataset_name=None, folder_name='generated_images'):
     model.train()
 
     for epoch in range(epochs):
@@ -64,9 +64,8 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
             optimizer.zero_grad()
             # Move data to device
             x_start = batch.to(device)
-            # Subtract mean image
-            x_start = x_start - mean_image.to(device)
-            print(x_start.shape)
+            # Normalize image
+            x_start = (x_start - mean_image.to(device)) / std_image.to(device)
             # Generate random timesteps
             t = torch.randint(0, sampler.num_timesteps, (x_start.shape[0],), device=device).long()
             
@@ -89,7 +88,7 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
         
         # Generate and save images
         if sample_fn is not None and (epoch + 1) % sample_interval == 0:
-            generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image)
+            generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image, std_image)
         
         # Save checkpoint
         if (epoch + 1) % save_interval == 0:
@@ -140,38 +139,57 @@ def main():
     sampler = create_sampler(**diffusion_config) 
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=None)
     
-    # Prepare dataloader
+    # Load mean and variance
     data_config = data_config['data']
-    transform = transforms.Compose([
-        transforms.Resize((model_config['image_size'], model_config['image_size'])),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])
-    batch_size = 60
-    sample_interval = 100
-    dataset = get_dataset(**data_config, transforms=transform)
-    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=4, train=True)
-
-    # Load mean image
     mean_image_path = os.path.join(data_config['root'], 'mean.png')
+    variance_path = os.path.join(data_config['root'], 'variance.npy')
+    
     mean_image = Image.open(mean_image_path)
     mean_image = transforms.Compose([
         transforms.Resize((model_config['image_size'], model_config['image_size'])),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])(mean_image)
-    mean_image = mean_image.to(device)
+    
+    variance = np.load(variance_path)
+    std_image = torch.from_numpy(np.sqrt(variance)).float()
+    std_image = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+    ])(std_image)
+    
+    # Custom normalization transform
+    class NormalizeWithMeanStd(object):
+        def __init__(self, mean, std):
+            self.mean = mean
+            self.std = std
+        
+        def __call__(self, tensor):
+            return (tensor - self.mean) / self.std
+    
+    # Prepare dataloader
+    transform = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+        transforms.ToTensor(),
+        NormalizeWithMeanStd(mean_image, std_image)
+    ])
+    batch_size = 16
+    sample_interval = 10
+    dataset = get_dataset(**data_config, transforms=transform)
+    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=2, train=True)
 
+    # Move mean and std to device
+    mean_image = mean_image.to(device)
+    std_image = std_image.to(device)
+    # print(std_image)
     # Set up optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     # Train the model
     num_epochs = 10000  # Adjust as needed
     save_interval = 500
-    folder_name = 'images_with_mean'
+    folder_name = 'images_with_mean_and_std'
     dataset_name = data_config['name']
     train(model, loader, sampler, optimizer, num_epochs, device, batch_size, 
-          logger, args.save_dir, sample_fn, sample_interval, save_interval, mean_image, dataset_name, folder_name)
+          logger, args.save_dir, sample_fn, sample_interval, save_interval, mean_image, std_image, dataset_name, folder_name)
 
     logger.info("Training completed.")
 

@@ -1,6 +1,6 @@
-# data:
-#   name: leather
-#   root: ./data/leather/train/good/
+data:
+  name: leather
+  root: ./data/leather/train/good/
 # data:
 #   name: bottle
 #   root: ./data/bottle/train/good/
@@ -9,6 +9,6 @@
 # data:
 #   name: toothbrush
 #   root: ./data/toothbrush/train/good/
-data:
-  name: BraTS
-  root: ./data/BraTS/content/data/
+# data:
+#   name: BraTS
+#   root: ./data/BraTS/content/data/

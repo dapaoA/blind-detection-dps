@@ -23,7 +23,7 @@ def load_yaml(file_path: str) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def generate_and_save_images(model, model_name, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image):
+def generate_and_save_images(model, model_name, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image, std_image):
     model.eval()
     images = []
     with torch.no_grad():
@@ -31,11 +31,11 @@ def generate_and_save_images(model, model_name, sampler, device, out_path, datas
             x_start = torch.randn(1, 3, model.image_size, model.image_size).to(device)
             sample = sample_fn(x_start=x_start, measurement=None, record=False, save_root=out_path)
             
-            # Add mean image to the generated sample
-            sample = sample + mean_image.to(device)
+            # Denormalize the generated sample
+            sample = sample * std_image.to(device) + mean_image.to(device)
             
-            # Denormalize and convert to PIL image
-            sample = (sample.clamp(-1, 1) + 1) / 2
+            # Clip values to [0, 1] range and convert to PIL image
+            sample = torch.clamp(sample, 0, 1)
             sample = (sample * 255).byte().cpu().numpy()
             
             img = Image.fromarray(sample[0].transpose(1, 2, 0))
@@ -98,35 +98,54 @@ def main():
     sampler = create_sampler(**diffusion_config) 
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=None)
     
+    # Load mean and variance
+    mean_image_path = os.path.join(data_config['data']['root'], 'mean.png')
+    variance_path = os.path.join(data_config['data']['root'], 'variance.npy')
+    
+    mean_image = Image.open(mean_image_path)
+    mean_image = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+        transforms.ToTensor(),
+    ])(mean_image)
+    
+    variance = np.load(variance_path)
+    std_image = torch.from_numpy(np.sqrt(variance)).float()
+    std_image = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+    ])(std_image)
+    
+    # Custom normalization transform
+    class NormalizeWithMeanStd(object):
+        def __init__(self, mean, std):
+            self.mean = mean
+            self.std = std
+        
+        def __call__(self, tensor):
+            return (tensor - self.mean) / self.std
+    
     # Prepare dataloader
     data_config = data_config['data']
     transform = transforms.Compose([
         transforms.Resize((model_config['image_size'], model_config['image_size'])),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        NormalizeWithMeanStd(mean_image, std_image)
     ])
     batch_size = 64
     dataset = get_dataset(**data_config, transforms=transform)
     loader = get_dataloader(dataset, batch_size=batch_size, num_workers=4, train=True)
 
-    # Load mean image
-    mean_image_path = os.path.join(data_config['root'], 'mean.png')
-    mean_image = Image.open(mean_image_path)
-    mean_image = transforms.Compose([
-        transforms.Resize((model_config['image_size'], model_config['image_size'])),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])(mean_image)
+    # Move mean and std to device
     mean_image = mean_image.to(device)
+    std_image = std_image.to(device)
 
-    # Train the model
+    # Generate images
     model_name = model_path.split('/')[-1].split('.')[0]
-    folder_name = 'images_without_mean'
+    folder_name = 'images_with_mean_and_std'
     dataset_name = data_config['name'] 
     dataset_name = ''
-    generate_and_save_images(model, model_name, sampler, device, args.save_dir, dataset_name, folder_name, sample_fn, mean_image)
+    generate_and_save_images(model, model_name, sampler, device, args.save_dir, dataset_name, folder_name, sample_fn, mean_image, std_image)
 
-    logger.info("Training completed.")
+    logger.info("Image generation completed.")
 
 if __name__ == '__main__':
     main()

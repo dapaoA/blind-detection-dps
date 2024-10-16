@@ -13,22 +13,40 @@ def load_yaml(file_path: str) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def compute_and_save_mean_image(dataset, image_size, save_path):
+def compute_and_save_mean_variance(dataset, image_size, save_path):
     mean_image = np.zeros((3, image_size, image_size), dtype=np.float32)
+    variance_image = np.zeros((3, image_size, image_size), dtype=np.float32)
     
+    # First pass: compute mean
     for i in tqdm.tqdm(range(len(dataset)), desc="Computing mean image"):
-        img = dataset[i]
-        mean_image += img.numpy()
+        img = dataset[i].numpy()
+        mean_image += img
     
     mean_image /= len(dataset)
     
-    # Convert to PIL Image and save
-    mean_image = (mean_image * 255).astype(np.uint8)
-    mean_image = np.transpose(mean_image, (1, 2, 0))
-    mean_image = Image.fromarray(mean_image)
-    mean_image.save(os.path.join(save_path, "mean.png"))
+    # Second pass: compute variance
+    for i in tqdm.tqdm(range(len(dataset)), desc="Computing variance image"):
+        img = dataset[i].numpy()
+        variance_image += (img - mean_image) ** 2
+    
+    variance_image /= len(dataset)
+    
+    # Replace zeros with ones in variance_image
+    variance_image[variance_image == 0] = 1
+    
+    # Convert mean to PIL Image and save
+    mean_image_uint8 = (mean_image * 255).astype(np.uint8)
+    mean_image_uint8 = np.transpose(mean_image_uint8, (1, 2, 0))
+    mean_image_pil = Image.fromarray(mean_image_uint8)
+    mean_image_pil.save(os.path.join(save_path, "mean.png"))
+    
+    # Save variance as numpy array
+    np.save(os.path.join(save_path, "variance.npy"), variance_image)
     
     print(f"Mean image saved as 'mean.png' in {save_path}")
+    print(f"Variance image saved as 'variance.npy' in {save_path}")
+    
+    return mean_image, variance_image
 
 def main():
     # Configurations
@@ -53,7 +71,7 @@ def main():
     image_size = sample_image.shape[-1]  # Assuming square images
     
     # Compute and save mean image
-    compute_and_save_mean_image(dataset, image_size, data_config['root'])
+    compute_and_save_mean_variance(dataset, image_size, data_config['root'])
 
 if __name__ == '__main__':
     main()
