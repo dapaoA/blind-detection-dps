@@ -13,12 +13,9 @@ from guided_diffusion.gaussian_diffusion import create_sampler
 from data.dataloader import get_dataset, get_dataloader
 from util.logger import get_logger
 from torch.utils.tensorboard import SummaryWriter
+from util.loader import data_transformer_list, load_yaml
 
 
-def load_yaml(file_path: str) -> dict:
-    with open(file_path) as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    return config
 
 def generate_and_save_images(epoch, model, sampler, device, out_path,
                              dataset_name, folder_name, sample_fn,
@@ -53,9 +50,7 @@ def generate_and_save_images(epoch, model, sampler, device, out_path,
         axs[i//5, i%5].axis('off')
     
     plt.tight_layout()
-    os.makedirs(os.path.join(out_path, folder_name), exist_ok=True)
-    os.makedirs(os.path.join(out_path, folder_name, dataset_name), exist_ok=True)
-    plt.savefig(os.path.join(out_path, folder_name, dataset_name, f'epoch_{epoch+1}.png'))
+    plt.savefig(os.path.join(out_path, folder_name, dataset_name, "images", f'epoch_{epoch+1}.png'))
     
     # Add the figure to TensorBoard
     writer.add_figure('Generated Images', fig, epoch)
@@ -68,7 +63,11 @@ def train(model, loader, sampler, optimizer, epochs,
           sample_fn=None, sample_interval=10, save_interval=100,
           mean_image=None, std_image=None, dataset_name=None,
           folder_name='generated_images', if_grayscale=False, writer=None):
+    # Create directories if they don't exist
+    os.makedirs(os.path.join(out_path, folder_name, dataset_name, "models"), exist_ok=True)
+    os.makedirs(os.path.join(out_path, folder_name, dataset_name, "images"), exist_ok=True)
     model.train()
+    best_loss = float('inf')
     for epoch in range(epochs):
         epoch_loss = 0.0
         progress_bar = tqdm.tqdm(loader, desc=f"Epoch {epoch+1}/{epochs}")
@@ -117,21 +116,22 @@ def train(model, loader, sampler, optimizer, epochs,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, os.path.join(out_path, f'checkpoint_epoch_{dataset_name}_{epoch+1}.pth'))
+            }, os.path.join(out_path, folder_name, dataset_name, "models", f'checkpoint_epoch_{dataset_name}_{epoch+1}.pth'))
+
+        # Save the best model
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': best_loss,
+            }, os.path.join(out_path, folder_name, dataset_name, "models", f'best_model_{dataset_name}.pth'))
+            logger.info(f"New best model saved with loss: {best_loss:.4f}")
 
     # Move model back to CPU to free up GPU memory
     model.to('cpu')
     torch.cuda.empty_cache()
-
-def data_transformer_list(mean, variance, size_l, size_w, if_grayscale=False):
-    transform_list = [
-        transforms.Resize((size_l, size_w)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean, variance)
-    ]
-    if if_grayscale:
-        transform_list.append(transforms.Grayscale())  # Convert to grayscale
-    return transforms.Compose(transform_list)
 
 
 def main():
@@ -148,7 +148,6 @@ def main():
     parser.add_argument('--reg_ord', type=int, default=0, choices=[0, 1])
     
     args = parser.parse_args()
-   
     # logger
     logger = get_logger()
     
@@ -171,8 +170,8 @@ def main():
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=None)
     # Load mean and variance
     data_config = data_config['data']
-    mean_image_path = os.path.join(data_config['root'], 'mean.png')
-    variance_path = os.path.join(data_config['root'], 'variance.npy')
+    mean_image_path = os.path.join(data_config['root'], 'mean_and_std', 'mean.png')
+    variance_path = os.path.join(data_config['root'], 'mean_and_std', 'variance.npy')
     if_grayscale = model_config['grayscale']
     mean_image = Image.open(mean_image_path)
     mean_image = transforms.Compose([
@@ -196,8 +195,8 @@ def main():
                                       if_grayscale=if_grayscale)
     
     batch_size = 8
-    sample_interval = 10
-    num_epochs = 3000  # Adjust as needed
+    sample_interval = 4
+    num_epochs = 5  # Adjust as needed
     save_interval = 500
 
     dataset = get_dataset(**data_config, transforms=transform)
@@ -214,9 +213,12 @@ def main():
 
     # Train the model
     folder_name = 'generated_images'
-    writer = SummaryWriter(log_dir=os.path.join(args.save_dir, folder_name, 'tensorboard_logs'))
-    # tensorboard --logdir=D:\experiments\su\blind-detection-dps\results\generated_images\tensorboard_logs
     dataset_name = data_config['name']
+    os.makedirs(args.save_dir, exist_ok=True)
+    os.makedirs(os.path.join(args.save_dir, folder_name), exist_ok=True)
+    os.makedirs(os.path.join(args.save_dir, folder_name, dataset_name), exist_ok=True)
+    writer = SummaryWriter(log_dir=os.path.join(args.save_dir, folder_name, dataset_name, 'tensorboard_logs'))
+    # tensorboard --logdir=D:\experiments\su\blind-detection-dps\results\generated_images\tensorboard_logs
     train(model, loader, sampler, optimizer, num_epochs, device, batch_size, 
           logger, args.save_dir, sample_fn, sample_interval,
           save_interval, mean_image, std_image, dataset_name,

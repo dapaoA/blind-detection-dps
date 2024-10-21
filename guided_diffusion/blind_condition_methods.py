@@ -87,3 +87,24 @@ class PosteriorSampling(BlindConditioningMethod):
             x_t.update({k: x_t[k] - scale[k]*norm_grad[k]})            
         
         return x_t, norm
+    
+
+@register_conditioning_method(name='emdps')
+class EMDPosteriorSampling(BlindConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        assert kwargs.get('scale') is not None
+        self.scale = kwargs.get('scale')
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev, x_0_hat, measurement, **kwargs)
+
+        scale = kwargs.get('scale')
+        if scale is None:
+            scale = self.scale
+         
+        keys = sorted(x_prev.keys())
+        for k in keys:
+            x_t.update({k: x_t[k] - scale[k]*norm_grad[k]})            
+        
+        return x_t, norm

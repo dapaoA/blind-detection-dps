@@ -1,7 +1,7 @@
 from functools import partial
 import os
 import argparse
-import yaml
+from PIL import Image
 
 import numpy as np
 import torch
@@ -13,22 +13,15 @@ from guided_diffusion.measurements import get_operator, get_noise
 from guided_diffusion.unet import create_model
 from guided_diffusion.gaussian_diffusion import create_sampler
 from data.dataloader import get_dataset, get_dataloader
-from motionblur.motionblur import Kernel
 from util.img_utils import Blurkernel, clear_color
 from util.logger import get_logger
-
-
-def load_yaml(file_path: str) -> dict:
-    with open(file_path) as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    return config
+from util.loader import load_yaml, data_transformer_list
 
 
 def main():
     # Configurations
     parser = argparse.ArgumentParser()
     parser.add_argument('--img_model_config', type=str, default='configs/model_config.yaml')
-    parser.add_argument('--kernel_model_config', type=str, default='configs/kernel_model_config.yaml')
     parser.add_argument('--diffusion_config', type=str, default='configs/diffusion_config.yaml')
     parser.add_argument('--task_config', type=str, default='configs/motion_deblur_config.yaml')
     # Training
@@ -49,8 +42,7 @@ def main():
     device = torch.device(device_str)  
     
     # Load configurations
-    img_model_config = load_yaml(args.img_model_config)
-    kernel_model_config = load_yaml(args.kernel_model_config)
+    model_config = load_yaml(args.img_model_config)
     diffusion_config = load_yaml(args.diffusion_config)
     task_config = load_yaml(args.task_config)
 
@@ -60,13 +52,11 @@ def main():
     args.intensity = task_config["intensity"]
    
     # Load model
-    img_model = create_model(**img_model_config)
+    img_model = create_model(**model_config)
     img_model = img_model.to(device)
     img_model.eval()
-    kernel_model = create_model(**kernel_model_config)
-    kernel_model = kernel_model.to(device)
-    kernel_model.eval()
-    model = {'img': img_model, 'kernel': kernel_model}
+
+    model = {'img': img_model, 'kernel': None}
 
     # Prepare Operator and noise
     measure_config = task_config['measurement']
@@ -102,8 +92,28 @@ def main():
 
     # Prepare dataloader
     data_config = task_config['data']
-    transform = transforms.Compose([transforms.ToTensor(),
-                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    data_config = data_config['data']
+    mean_image_path = os.path.join(data_config['root'], 'mean.png')
+    variance_path = os.path.join(data_config['root'], 'variance.npy')
+    if_grayscale = model_config['grayscale']
+    mean_image = Image.open(mean_image_path)
+    mean_image = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+        transforms.ToTensor(),
+    ])(mean_image)
+    
+    variance = np.load(variance_path)
+    std_image = torch.from_numpy(np.sqrt(variance)).float()
+    std_image = transforms.Compose([
+        transforms.Resize((model_config['image_size'], model_config['image_size'])),
+    ])(std_image)
+    if if_grayscale:
+        mean_image = mean_image.mean(dim=0, keepdim=True)
+        std_image = std_image.mean(dim=0, keepdim=True)
+
+    transform = data_transformer_list(mean_image, std_image,
+                                      data_config['image_size'],
+                                      data_config['image_size'])
     dataset = get_dataset(**data_config, transforms=transform)
     loader = get_dataloader(dataset, batch_size=1, num_workers=0, train=False)
 
@@ -115,15 +125,6 @@ def main():
         logger.info(f"Inference for image {i}")
         fname = str(i).zfill(5) + '.png'
         ref_img = ref_img.to(device)
-
-        if args.kernel == 'motion':
-            kernel = Kernel(size=(args.kernel_size, args.kernel_size), intensity=args.intensity).kernelMatrix
-            kernel = torch.from_numpy(kernel).type(torch.float32)
-            kernel = kernel.to(device).view(1, 1, args.kernel_size, args.kernel_size)
-        elif args.kernel == 'gaussian':
-            conv = Blurkernel('gaussian', kernel_size=args.kernel_size, device=device)
-            kernel = conv.get_kernel().type(torch.float32)
-            kernel = kernel.to(device).view(1, 1, args.kernel_size, args.kernel_size)
         
         # Forward measurement model (Ax + n)
         y = operator.forward(ref_img, kernel)

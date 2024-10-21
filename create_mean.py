@@ -14,6 +14,7 @@ def load_yaml(file_path: str) -> dict:
     return config
 
 def compute_and_save_mean_variance(dataset, image_size, save_path):
+    os.makedirs(os.path.join(save_path, "mean_and_std"), exist_ok=True)
     mean_image = np.zeros((3, image_size, image_size), dtype=np.float32)
     variance_image = np.zeros((3, image_size, image_size), dtype=np.float32)
     
@@ -38,10 +39,10 @@ def compute_and_save_mean_variance(dataset, image_size, save_path):
     mean_image_uint8 = (mean_image * 255).astype(np.uint8)
     mean_image_uint8 = np.transpose(mean_image_uint8, (1, 2, 0))
     mean_image_pil = Image.fromarray(mean_image_uint8)
-    mean_image_pil.save(os.path.join(save_path, "mean.png"))
+    mean_image_pil.save(os.path.join(save_path, "mean_and_std", "mean.png"))
     
     # Save variance as numpy array
-    np.save(os.path.join(save_path, "variance.npy"), variance_image)
+    np.save(os.path.join(save_path, "mean_and_std", "variance.npy"), variance_image)
     
     print(f"Mean image saved as 'mean.png' in {save_path}")
     print(f"Variance image saved as 'variance.npy' in {save_path}")
