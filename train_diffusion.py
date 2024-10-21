@@ -8,14 +8,11 @@ import tqdm
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 from PIL import Image
-from guided_diffusion.blind_condition_methods import get_conditioning_method
-from guided_diffusion.measurements import get_operator, get_noise
 from guided_diffusion.unet import create_model_for_train
 from guided_diffusion.gaussian_diffusion import create_sampler
 from data.dataloader import get_dataset, get_dataloader
-from motionblur.motionblur import Kernel
-from util.img_utils import Blurkernel, clear_color
 from util.logger import get_logger
+from torch.utils.tensorboard import SummaryWriter
 
 
 def load_yaml(file_path: str) -> dict:
@@ -23,40 +20,55 @@ def load_yaml(file_path: str) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image, std_image):
+def generate_and_save_images(epoch, model, sampler, device, out_path,
+                             dataset_name, folder_name, sample_fn,
+                             mean_image, std_image, if_grayscale, writer):
     model.eval()
     images = []
     with torch.no_grad():
-        x_start = torch.randn(10, 3, model.image_size, model.image_size).to(device)
+        x_start = torch.randn(10, 1 if if_grayscale else 3, model.image_size, model.image_size).to(device)
         samples = sample_fn(x_start=x_start, measurement=None, record=False, save_root=out_path)
         
         # Denormalize the generated samples
         samples = samples * std_image.to(device) + mean_image.to(device)
         
-        # Clip values to [0, 1] range and convert to PIL images
+        # Clip values to [0, 1] range
         samples = torch.clamp(samples, 0, 1)
         samples = (samples * 255).byte().cpu().numpy()
         
         for i in range(10):
-            img = Image.fromarray(samples[i].transpose(1, 2, 0))
+            if if_grayscale:  # Check if the channel is 1 for grayscale
+                img = Image.fromarray(samples[i][0], mode='L')  # Use mode 'L' for grayscale
+            else:
+                img = Image.fromarray(samples[i].transpose(1, 2, 0))
             images.append(img)
 
     # Create a 2x5 grid of images
     fig, axs = plt.subplots(2, 5, figsize=(25, 10))
     for i, img in enumerate(images):
-        axs[i//5, i%5].imshow(img)
+        if if_grayscale:  # Check if the channel is 1 for grayscale
+            axs[i//5, i%5].imshow(img, cmap='gray')  # Use cmap 'gray' for grayscale
+        else:
+            axs[i//5, i%5].imshow(img)
         axs[i//5, i%5].axis('off')
     
     plt.tight_layout()
     os.makedirs(os.path.join(out_path, folder_name), exist_ok=True)
     os.makedirs(os.path.join(out_path, folder_name, dataset_name), exist_ok=True)
     plt.savefig(os.path.join(out_path, folder_name, dataset_name, f'epoch_{epoch+1}.png'))
+    
+    # Add the figure to TensorBoard
+    writer.add_figure('Generated Images', fig, epoch)
+    
     plt.close()
     model.train()
 
-def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger, out_path, sample_fn=None, sample_interval=10, save_interval=100, mean_image=None, std_image=None, dataset_name=None, folder_name='generated_images'):
+def train(model, loader, sampler, optimizer, epochs,
+          device, batch_size, logger, out_path,
+          sample_fn=None, sample_interval=10, save_interval=100,
+          mean_image=None, std_image=None, dataset_name=None,
+          folder_name='generated_images', if_grayscale=False, writer=None):
     model.train()
-
     for epoch in range(epochs):
         epoch_loss = 0.0
         progress_bar = tqdm.tqdm(loader, desc=f"Epoch {epoch+1}/{epochs}")
@@ -64,8 +76,7 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
             optimizer.zero_grad()
             # Move data to device
             x_start = batch.to(device)
-            # Normalize image
-            x_start = (x_start - mean_image.to(device)) / std_image.to(device)
+
             # Generate random timesteps
             t = torch.randint(0, sampler.num_timesteps, (x_start.shape[0],), device=device).long()
             
@@ -81,14 +92,23 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
             
             # Update progress bar
             progress_bar.set_postfix({'loss': loss.item()})
+            
+            # Add loss to TensorBoard
+            global_step = epoch * len(loader) + i
+            writer.add_scalar('Loss/train', loss.item(), global_step)
         
         # Log epoch results
         avg_loss = epoch_loss / len(loader)
         logger.info(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
         
+        # Add average loss to TensorBoard
+        writer.add_scalar('Loss/epoch', avg_loss, epoch)
+        
         # Generate and save images
         if sample_fn is not None and (epoch + 1) % sample_interval == 0:
-            generate_and_save_images(epoch, model, sampler, device, out_path, dataset_name, folder_name, sample_fn, mean_image, std_image)
+            generate_and_save_images(epoch, model, sampler, device,
+                                     out_path, dataset_name, folder_name,
+                                     sample_fn, mean_image, std_image, if_grayscale, writer)
         
         # Save checkpoint
         if (epoch + 1) % save_interval == 0:
@@ -102,6 +122,17 @@ def train(model, loader, sampler, optimizer, epochs, device, batch_size, logger,
     # Move model back to CPU to free up GPU memory
     model.to('cpu')
     torch.cuda.empty_cache()
+
+def data_transformer_list(mean, variance, size_l, size_w, if_grayscale=False):
+    transform_list = [
+        transforms.Resize((size_l, size_w)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, variance)
+    ]
+    if if_grayscale:
+        transform_list.append(transforms.Grayscale())  # Convert to grayscale
+    return transforms.Compose(transform_list)
+
 
 def main():
     # Configurations
@@ -138,12 +169,11 @@ def main():
     # Load diffusion sampler
     sampler = create_sampler(**diffusion_config) 
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=None)
-    
     # Load mean and variance
     data_config = data_config['data']
     mean_image_path = os.path.join(data_config['root'], 'mean.png')
     variance_path = os.path.join(data_config['root'], 'variance.npy')
-    
+    if_grayscale = model_config['grayscale']
     mean_image = Image.open(mean_image_path)
     mean_image = transforms.Compose([
         transforms.Resize((model_config['image_size'], model_config['image_size'])),
@@ -155,26 +185,23 @@ def main():
     std_image = transforms.Compose([
         transforms.Resize((model_config['image_size'], model_config['image_size'])),
     ])(std_image)
-    
-    # Custom normalization transform
-    class NormalizeWithMeanStd(object):
-        def __init__(self, mean, std):
-            self.mean = mean
-            self.std = std
-        
-        def __call__(self, tensor):
-            return (tensor - self.mean) / self.std
-    
+    if if_grayscale:
+        mean_image = mean_image.mean(dim=0, keepdim=True)
+        std_image = std_image.mean(dim=0, keepdim=True)
+
     # Prepare dataloader
-    transform = transforms.Compose([
-        transforms.Resize((model_config['image_size'], model_config['image_size'])),
-        transforms.ToTensor(),
-        NormalizeWithMeanStd(mean_image, std_image)
-    ])
-    batch_size = 16
+    transform = data_transformer_list(mean_image, std_image, 
+                                      model_config['image_size'],
+                                      model_config['image_size'],
+                                      if_grayscale=if_grayscale)
+    
+    batch_size = 8
     sample_interval = 10
+    num_epochs = 3000  # Adjust as needed
+    save_interval = 500
+
     dataset = get_dataset(**data_config, transforms=transform)
-    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=2, train=True)
+    loader = get_dataloader(dataset, batch_size=batch_size, num_workers=8, train=True)
 
     # Move mean and std to device
     mean_image = mean_image.to(device)
@@ -183,14 +210,19 @@ def main():
     # Set up optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
+    # Set up TensorBoard
+
     # Train the model
-    num_epochs = 10000  # Adjust as needed
-    save_interval = 500
-    folder_name = 'images_with_mean_and_std'
+    folder_name = 'generated_images'
+    writer = SummaryWriter(log_dir=os.path.join(args.save_dir, folder_name, 'tensorboard_logs'))
+    # tensorboard --logdir=D:\experiments\su\blind-detection-dps\results\generated_images\tensorboard_logs
     dataset_name = data_config['name']
     train(model, loader, sampler, optimizer, num_epochs, device, batch_size, 
-          logger, args.save_dir, sample_fn, sample_interval, save_interval, mean_image, std_image, dataset_name, folder_name)
+          logger, args.save_dir, sample_fn, sample_interval,
+          save_interval, mean_image, std_image, dataset_name,
+          folder_name, if_grayscale, writer)
 
+    writer.close()
     logger.info("Training completed.")
 
 if __name__ == '__main__':
