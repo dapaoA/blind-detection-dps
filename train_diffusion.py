@@ -195,8 +195,8 @@ def main():
                                       if_grayscale=if_grayscale)
     
     batch_size = 8
-    sample_interval = 4
-    num_epochs = 5  # Adjust as needed
+    sample_interval = 50
+    num_epochs = 3000  # Adjust as needed
     save_interval = 500
 
     dataset = get_dataset(**data_config, transforms=transform)
