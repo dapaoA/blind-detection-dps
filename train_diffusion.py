@@ -196,7 +196,7 @@ def main():
     
     batch_size = 8
     sample_interval = 50
-    num_epochs = 3000  # Adjust as needed
+    num_epochs = 10000  # Adjust as needed
     save_interval = 500
 
     dataset = get_dataset(**data_config, transforms=transform)
