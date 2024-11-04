@@ -22,8 +22,9 @@ def main():
     # Configurations
     parser = argparse.ArgumentParser()
     parser.add_argument('--img_model_config', type=str, default='configs/model_config.yaml')
+    parser.add_argument('--kernel_model_config', type=str, default='configs/kernel_model_config.yaml')
     parser.add_argument('--diffusion_config', type=str, default='configs/diffusion_config.yaml')
-    parser.add_argument('--task_config', type=str, default='configs/motion_deblur_config.yaml')
+    parser.add_argument('--task_config', type=str, default='configs/anomaly_detection_config.yaml')
     # Training
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--save_dir', type=str, default='./results')
@@ -126,8 +127,11 @@ def main():
         fname = str(i).zfill(5) + '.png'
         ref_img = ref_img.to(device)
         
+        # Initialize random kernel mask with same spatial dims as ref_img but 1 channel
+        kernel = torch.randn(1, 1, ref_img.shape[2], ref_img.shape[3], device=device)
+        
         # Forward measurement model (Ax + n)
-        y = operator.forward(ref_img, kernel)
+        y = operator.forward(ref_img, kernel) 
         y_n = noiser(y)
         
         # Set initial sample 

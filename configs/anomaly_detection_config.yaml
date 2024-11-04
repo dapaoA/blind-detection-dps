@@ -1,4 +1,4 @@
-kernel: motion
+kernel: direct
 kernel_size: 64
 intensity: 0.5
 
