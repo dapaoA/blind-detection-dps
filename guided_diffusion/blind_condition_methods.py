@@ -38,8 +38,8 @@ class BlindConditioningMethod(ConditioningMethod):
                        x_0_hat: Dict[str, torch.Tensor], 
                        measurement: torch.Tensor,
                        **kwargs):
-
-        if self.noiser.__name__ == 'gaussian' or self.noiser is None:  # why none?
+        reg_norms = []
+        if self.noiser.__name__ == 'gaussian':  # why none?
             
             assert sorted(x_prev.keys()) == sorted(x_0_hat.keys()), \
                 "Keys of x_prev and x_0_hat should be identical."
@@ -59,10 +59,33 @@ class BlindConditioningMethod(ConditioningMethod):
 
                     reg_ord, reg_scale = reg_info[reg_target]
                     if reg_scale != 0.0:  # if got scale 0, skip calculating.
-                        norm += reg_scale * torch.linalg.norm(x_0_hat[reg_target].view(-1), ord=reg_ord)                        
-                    
+                        reg_norms.append(reg_scale * torch.linalg.norm(x_0_hat[reg_target].view(-1), ord=reg_ord))
+            if reg_norms:
+                norm = norm + sum(reg_norms)
             norm_grad = torch.autograd.grad(outputs=norm, inputs=x_prev_values)
+        elif self.noiser.__name__ == "directe":
+            assert sorted(x_prev.keys()) == sorted(x_0_hat.keys()), \
+                "Keys of x_prev and x_0_hat should be identical."
+
+            keys = sorted(x_prev.keys())
+            x_prev_values = [x[1] for x in sorted(x_prev.items())] 
+            x_0_hat_values = [x[1] for x in sorted(x_0_hat.items())]
             
+            difference = measurement - self.operator.forward(*x_0_hat_values)
+            norm = torch.linalg.norm(difference)
+
+            reg_info = kwargs.get('regularization', None)
+            if reg_info is not None:
+                for reg_target in reg_info:
+                    assert reg_target in keys, \
+                        f"Regularization target {reg_target} does not exist in x_0_hat."
+
+                    reg_ord, reg_scale = reg_info[reg_target]
+                    if reg_scale != 0.0:  # if got scale 0, skip calculating.
+                        reg_norms.append(reg_scale * torch.linalg.norm(x_0_hat[reg_target].view(-1), ord=reg_ord))
+            if reg_norms:
+                norm = norm + sum(reg_norms)
+            norm_grad = torch.autograd.grad(outputs=norm, inputs=x_prev_values)
         else:
             raise NotImplementedError
         
@@ -108,3 +131,4 @@ class EMDPosteriorSampling(BlindConditioningMethod):
             x_t.update({k: x_t[k] - scale[k]*norm_grad[k]})            
         
         return x_t, norm
+    

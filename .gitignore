@@ -1,3 +1,4 @@
 *.pyc
 motionblur/
 bkse/
+models/
