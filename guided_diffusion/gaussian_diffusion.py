@@ -754,18 +754,17 @@ class BlindFDPS(DDPM):
             # diffusion prior cases 
             output = dict() 
             for k in model:
-                output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})  
-            
-            # uniform prior cases 
-            for k in x_prev:
-                if output.get(k, None) is None:
-                    output.update({k: x_prev[k]})
+                if k == 'img':
+                    output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})
+                else:
+                    pass
+
         
-            # Normalize the kernel (TODO: can we generalize this part?)
-            kernel_hatx0 = output['kernel']['pred_xstart'] 
-            kernel_hatx0 = (kernel_hatx0 + 1.0) / 2.0
-            kernel_hatx0 /= kernel_hatx0.sum()
-            output['kernel'].update({'pred_xstart': kernel_hatx0})
+            # # Normalize the kernel (TODO: can we generalize this part?)
+            # kernel_hatx0 = output['kernel']['pred_xstart'] 
+            # kernel_hatx0 = (kernel_hatx0 + 1.0) / 2.0
+            # kernel_hatx0 /= kernel_hatx0.sum()
+            # output['kernel'].update({'pred_xstart': kernel_hatx0})
 
             # give condition
             noisy_measurement = self.q_sample(measurement, t=time)

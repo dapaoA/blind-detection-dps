@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--kernel_model_config', type=str, default='configs/kernel_model_config.yaml')
     parser.add_argument('--diffusion_config', type=str, default='configs/diffusion_config.yaml')
     parser.add_argument('--task_config', type=str, default='configs/anomaly_detection_config.yaml')
+    parser.add_argument('--data_config', type=str, default='configs/data_config.yaml')
     # Training
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--save_dir', type=str, default='./results')
@@ -46,7 +47,7 @@ def main():
     model_config = load_yaml(args.img_model_config)
     diffusion_config = load_yaml(args.diffusion_config)
     task_config = load_yaml(args.task_config)
-
+    data_config = load_yaml(args.data_config)['data']
     # Kernel configs to namespace save space
     args.kernel = task_config["kernel"]
     args.kernel_size = task_config["kernel_size"]
@@ -92,10 +93,9 @@ def main():
         os.makedirs(os.path.join(out_path, img_dir), exist_ok=True)
 
     # Prepare dataloader
-    data_config = task_config['data']
-    data_config = data_config['data']
-    mean_image_path = os.path.join(data_config['root'], 'mean.png')
-    variance_path = os.path.join(data_config['root'], 'variance.npy')
+    print(data_config)
+    mean_image_path = os.path.join(data_config['root'], "mean_and_std", 'mean.png')
+    variance_path = os.path.join(data_config['root'], "mean_and_std", 'variance.npy')
     if_grayscale = model_config['grayscale']
     mean_image = Image.open(mean_image_path)
     mean_image = transforms.Compose([
@@ -113,9 +113,10 @@ def main():
         std_image = std_image.mean(dim=0, keepdim=True)
 
     transform = data_transformer_list(mean_image, std_image,
-                                      data_config['image_size'],
-                                      data_config['image_size'])
-    dataset = get_dataset(**data_config, transforms=transform)
+                                      model_config['image_size'],
+                                      model_config['image_size'],
+                                      if_grayscale=model_config['grayscale'])
+    dataset = get_dataset(**task_config['data'], transforms=transform)
     loader = get_dataloader(dataset, batch_size=1, num_workers=0, train=False)
 
     # set seed for reproduce
@@ -126,14 +127,13 @@ def main():
         logger.info(f"Inference for image {i}")
         fname = str(i).zfill(5) + '.png'
         ref_img = ref_img.to(device)
+        print(ref_img.shape)
         
         # Initialize random kernel mask with same spatial dims as ref_img but 1 channel
         kernel = torch.randn(1, 1, ref_img.shape[2], ref_img.shape[3], device=device)
         
         # Forward measurement model (Ax + n)
-        y = operator.forward(ref_img, kernel) 
-        y_n = noiser(y)
-        
+        y_n = ref_img
         # Set initial sample 
         # !All values will be given to operator.forward(). Please be aware it.
         x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
@@ -147,6 +147,7 @@ def main():
                 logger.info(f"{k} will use uniform prior.")
        
         # sample 
+        print(x_start['img'].shape)
         sample = sample_fn(x_start=x_start, measurement=y_n, record=False, save_root=out_path)
 
         plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n))

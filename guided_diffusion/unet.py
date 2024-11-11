@@ -97,7 +97,8 @@ def create_model(
         use_new_attention_order=use_new_attention_order,
     )
 
-    model.load_state_dict(th.load(model_path, map_location='cpu'), strict=True)
+    checkpoint = th.load(model_path, map_location='cpu')
+    model.load_state_dict(checkpoint['model_state_dict'], strict=True)
     return model
 
 

@@ -1,4 +1,4 @@
-sampler: blind_dps
+sampler: blind_fdps
 steps: 1000
 noise_schedule: linear
 model_mean_type: epsilon 

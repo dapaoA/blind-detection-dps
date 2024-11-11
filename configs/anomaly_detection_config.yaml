@@ -13,7 +13,7 @@ data:
 
 measurement:
   operator:
-    name: inpainting
+    name: blind_blur
 
   noise: 
     name: gaussian
