@@ -5,15 +5,18 @@ intensity: 0.5
 conditioning:
   method: emdps
   params:
-    scale: 0.3
+    scale: 5
+    iterations:
+      img: 1
+      kernel: 5
 
 data:
   name: ffhq
-  root: ./data/samples/
+  root: ./data/leather/test/cut/
 
 measurement:
   operator:
-    name: blind_blur
+    name: inpainting
 
   noise: 
     name: gaussian

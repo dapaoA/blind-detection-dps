@@ -139,9 +139,9 @@ class InpaintingOperator(LinearOperator):
     def __init__(self, device):
         self.device = device
     
-    def forward(self, data, **kwargs):
+    def forward(self, data, mask, **kwargs):
         try:
-            return data * kwargs.get('mask', None).to(self.device)
+            return data * mask.to(self.device)
         except:
             raise ValueError("Require mask")
     

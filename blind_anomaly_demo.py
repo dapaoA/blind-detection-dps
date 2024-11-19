@@ -124,37 +124,51 @@ def main():
     
     # Do Inference
     for i, ref_img in enumerate(loader):
-        logger.info(f"Inference for image {i}")
-        fname = str(i).zfill(5) + '.png'
-        ref_img = ref_img.to(device)
-        print(ref_img.shape)
+        if i == 1:
+            logger.info(f"Inference for image {i}")
+            fname = str(i).zfill(5) + '.png'
+            ref_img = ref_img.to(device)
+            print(ref_img.shape)
+            
+            # Initialize circle parameters [radius, x, y]
+            H, W = ref_img.shape[2:]
+            radius = torch.tensor([min(H,W)/4], device=device) # Initial radius 1/4 of image size
+            x_coord = torch.tensor([W/2], device=device)  # Initial x at center
+            y_coord = torch.tensor([H/2], device=device)  # Initial y at center
+            circle_params = torch.stack([radius, x_coord, y_coord], dim=0).unsqueeze(0)  # Shape: [1,3]
+            
+            # Forward measurement model (Ax + n)
+            y_n = ref_img
+            # Set initial sample 
+            # !All values will be given to operator.forward(). Please be aware it.
+            x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
+                    'kernel': circle_params.requires_grad_()}
+            
+            # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
+            for k in x_start:
+                if k in model.keys():
+                    logger.info(f"{k} will use diffusion prior")
+                else:
+                    logger.info(f"{k} will use uniform prior.")
         
-        # Initialize random kernel mask with same spatial dims as ref_img but 1 channel
-        kernel = torch.randn(1, 1, ref_img.shape[2], ref_img.shape[3], device=device)
-        
-        # Forward measurement model (Ax + n)
-        y_n = ref_img
-        # Set initial sample 
-        # !All values will be given to operator.forward(). Please be aware it.
-        x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
-                   'kernel': torch.randn(kernel.shape, device=device).requires_grad_()}
-        
-        # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
-        for k in x_start:
-            if k in model.keys():
-                logger.info(f"{k} will use diffusion prior")
-            else:
-                logger.info(f"{k} will use uniform prior.")
-       
-        # sample 
-        print(x_start['img'].shape)
-        sample = sample_fn(x_start=x_start, measurement=y_n, record=False, save_root=out_path)
+            # sample 
+            print(x_start['img'].shape)
+            sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path)
 
-        plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n))
-        plt.imsave(os.path.join(out_path, 'label', 'ker_'+fname), clear_color(kernel))
-        plt.imsave(os.path.join(out_path, 'label', 'img_'+fname), clear_color(ref_img))
-        plt.imsave(os.path.join(out_path, 'recon', 'img_'+fname), clear_color(sample['img']))
-        plt.imsave(os.path.join(out_path, 'recon', 'ker_'+fname), clear_color(sample['kernel']))
+            # Create circle mask from final kernel parameters
+            circle_mask = torch.ones((1, 1, H, W), device=device)
+            y, x = torch.meshgrid(torch.arange(H, device=device), torch.arange(W, device=device))
+            x_coord = sample['kernel'][:, 1].view(1, 1)
+            y_coord = sample['kernel'][:, 2].view(1, 1)
+            radius = sample['kernel'][:, 0].view(1, 1)
+            dist = torch.sqrt((x[None, :, :] - x_coord)**2 + (y[None, :, :] - y_coord)**2)
+            circle_mask[:, 0] = (dist >= radius).float()
+
+            plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n), cmap='gray')
+            plt.imsave(os.path.join(out_path, 'label', 'img_'+fname), clear_color(ref_img), cmap='gray')
+            plt.imsave(os.path.join(out_path, 'recon', 'img_'+fname), clear_color(sample['img']), cmap='gray')
+            plt.imsave(os.path.join(out_path, 'recon', 'ker_'+fname), clear_color(circle_mask), cmap='gray')
+            break
 
 if __name__ == '__main__':
     main()

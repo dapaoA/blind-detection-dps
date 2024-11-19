@@ -194,10 +194,10 @@ def main():
                                       model_config['image_size'],
                                       if_grayscale=if_grayscale)
     
-    batch_size = 8
+    batch_size = 4
     sample_interval = 400
     num_epochs = 30000  # Adjust as needed
-    save_interval = 4000
+    save_interval = 100
 
     dataset = get_dataset(**data_config, transforms=transform)
     loader = get_dataloader(dataset, batch_size=batch_size, num_workers=8, train=True)

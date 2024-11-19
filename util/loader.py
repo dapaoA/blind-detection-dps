@@ -14,6 +14,19 @@ def data_transformer_list(mean, variance, size_l, size_w, if_grayscale=False):
     return transforms.Compose(transform_list)
 
 
+def data_transformer_list_no_normalize(size_l, size_w, if_grayscale=False):
+    transform_list = [
+        transforms.Resize((size_l, size_w)),
+        transforms.ToTensor(),
+        ]
+    if if_grayscale:
+        transform_list.append(transforms.Grayscale())  # Convert to grayscale
+    return transforms.Compose(transform_list)
+
+
+
+
+
 def data_transformer_list_augmentation(mean, variance, size_l, size_w, if_grayscale=False):
     base_transforms = [
         transforms.Resize((size_l, size_w)),

@@ -717,14 +717,13 @@ class BlindDPS(DDPM):
             pbar.set_postfix({'norm': norm.item()}, refresh=False)
 
             if record:
-                if idx % 10 == 0:
+                if idx % 1 == 0:
                     for k, v in updated.items():
                         save_dir = os.path.join(save_root, f'progress/{k}')
                         if not os.path.isdir(save_dir):
                             os.makedirs(save_dir, exist_ok=True)
                         file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
                         plt.imsave(file_path, clear_color(v))
-# 
         return updated
 
 
@@ -744,7 +743,6 @@ class BlindFDPS(DDPM):
         x_prev = x_start 
         device = list(x_prev.values())[0].device 
         batch_size = list(x_prev.values())[0].shape[0]
-        
         pbar = tqdm(list(range(self.num_timesteps))[::-1])
         for idx in pbar:
             time = torch.tensor([idx] * batch_size, device=device)
@@ -757,17 +755,28 @@ class BlindFDPS(DDPM):
                 if k == 'img':
                     output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})
                 else:
-                    pass
+                    # Get image dimensions from x_prev['img']
+                    H, W = x_prev['img'].shape[-2:]
 
-        
-            # # Normalize the kernel (TODO: can we generalize this part?)
-            # kernel_hatx0 = output['kernel']['pred_xstart'] 
-            # kernel_hatx0 = (kernel_hatx0 + 1.0) / 2.0
-            # kernel_hatx0 /= kernel_hatx0.sum()
-            # output['kernel'].update({'pred_xstart': kernel_hatx0})
+                    # Create meshgrid
+                    y, x = torch.meshgrid(torch.arange(H, device=device), 
+                                        torch.arange(W, device=device))        
+                    # Create circle mask
+                    circle_mask = torch.ones((batch_size, 1, H, W), device=device)
+                    # Vectorized computation for all batches at once
+                    # Handle kernel parameters directly without reshaping
+                    x_coords = x_prev[k][:, 1]  # [B]
+                    y_coords = x_prev[k][:, 2]  # [B]
+                    radii = x_prev[k][:, 0]     # [B]
+                    # Broadcasting handles batch dimension automatically
+                    dist = torch.sqrt((x[None, :, :] - x_coords)**2 + (y[None, :, :] - y_coords)**2)
+                    circle_mask[:, 0] = (dist >= radii).float()
 
-            # give condition
-            noisy_measurement = self.q_sample(measurement, t=time)
+                    output.update({k: {
+                        'pred_xstart': x_prev[k],
+                        'sample': circle_mask
+                    }})
+
             x_t = dict((k, v['sample']) for k, v in output.items())
             x_0_hat = dict((k, v['pred_xstart']) for k, v in output.items())
             
@@ -775,27 +784,36 @@ class BlindFDPS(DDPM):
             # while we reported the result with a constant scale in the paper.
             scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
             scale = {k: scale for k in output.keys()}
-            updated, norm = measurement_cond_fn(x_t=x_t,
-                                                measurement=measurement,
-                                                noisy_measurement=noisy_measurement,
-                                                x_prev=x_prev,
+            updated, norm = measurement_cond_fn(x_prev=x_prev,
+                                                x_t=x_t,
                                                 x_0_hat=x_0_hat,
+                                                measurement=measurement,
                                                 scale=scale)
             
             updated = dict((k, v.detach_()) for k, v in updated.items())
             x_prev = updated
 
             pbar.set_postfix({'norm': norm.item()}, refresh=False)
-
+            is_grey = True if updated['img'].shape[0] == 1 else False
             if record:
-                if idx % 10 == 0:
+                if idx % 50 == 0:
                     for k, v in updated.items():
                         save_dir = os.path.join(save_root, f'progress/{k}')
                         if not os.path.isdir(save_dir):
                             os.makedirs(save_dir, exist_ok=True)
                         file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
-                        plt.imsave(file_path, clear_color(v))
-# 
+                        if k == 'img':
+                            plt.imsave(file_path, clear_color(v), cmap='gray' if is_grey else None)
+                        elif k != 'img':
+                            plt.imsave(file_path, clear_color(output[k]['sample']), cmap='gray' if is_grey else None)
+                        if k == 'img':
+                            save_dir = os.path.join(save_root, f'progress/img_xhat')
+                            if not os.path.isdir(save_dir):
+                                os.makedirs(save_dir, exist_ok=True)
+                            file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
+                            plt.imsave(file_path, clear_color(x_0_hat[k]), cmap='gray' if is_grey else None)
+            # if idx == 995:
+            #     exit()
         return updated
 
 # =================
