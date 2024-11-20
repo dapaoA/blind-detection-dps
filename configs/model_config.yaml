@@ -17,4 +17,4 @@ resblock_updown: True
 use_fp16: False
 use_new_attention_order: False
 grayscale: True
-model_path: results/generated_images/leather/models/checkpoint_epoch_leather_200.pth
+model_path: results/generated_images/bottle/models/checkpoint_epoch_bottle_3000.pth

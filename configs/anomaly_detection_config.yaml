@@ -5,14 +5,14 @@ intensity: 0.5
 conditioning:
   method: emdps
   params:
-    scale: 5
+    scale: 0.0
     iterations:
       img: 1
       kernel: 5
 
 data:
   name: ffhq
-  root: ./data/leather/test/cut/
+  root: ./data/bottle/test/broken_small/
 
 measurement:
   operator:

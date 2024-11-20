@@ -238,7 +238,6 @@ class EMDPosteriorSampling(PartialBlindConditioningMethod):
             scale = self.scale
         if iterations is None:
             iterations = self.iterations
-
         keys = sorted(x_prev.keys())
         norm = None
         # Handle img key first
@@ -271,7 +270,7 @@ class EMDPosteriorSampling(PartialBlindConditioningMethod):
                     
                     # 使用 softmax 创建平滑的掩码
                     # temperature 控制平滑程度，越小越接近原始的阶跃函数
-                    temperature = 0.1
+                    temperature = 1
                     normalized_dist = (dist - radii.unsqueeze(-1).unsqueeze(-1)) / temperature
                     circle_mask = torch.ones((batch_size, 1, H, W), device=x_0_hat[k].device)
                     circle_mask[:, 0] = torch.sigmoid(normalized_dist)
@@ -279,7 +278,7 @@ class EMDPosteriorSampling(PartialBlindConditioningMethod):
                     # 计算损失
                     difference = measurement - circle_mask
                     mask_loss = torch.linalg.norm(difference)
-                    radius_penalty = 0.008 * torch.sum(radii**2)
+                    radius_penalty = 0.01 * torch.sum(radii**2)
                     
                     # 打印两部分损失
                     # print(f"Mask loss: {mask_loss.item():.4f}, Radius penalty: {radius_penalty.item():.4f}")
@@ -289,7 +288,7 @@ class EMDPosteriorSampling(PartialBlindConditioningMethod):
                     
                     # 计算梯度并更新
                     norm_grad = torch.autograd.grad(outputs=norm, inputs=[x_0_hat[k]])[0]
-                    x_0_hat[k] = x_0_hat[k] - scale[k]*norm_grad/torch.linalg.norm(norm_grad)
+                    x_0_hat[k] = x_0_hat[k] - 0 * scale[k]*norm_grad/torch.linalg.norm(norm_grad)
                     x_0_hat[k] = x_0_hat[k].detach()
                     # print(f"x_0_hat[{k}]", x_0_hat[k])
                     

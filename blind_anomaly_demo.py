@@ -102,7 +102,6 @@ def main():
         transforms.Resize((model_config['image_size'], model_config['image_size'])),
         transforms.ToTensor(),
     ])(mean_image)
-    
     variance = np.load(variance_path)
     std_image = torch.from_numpy(np.sqrt(variance)).float()
     std_image = transforms.Compose([
@@ -124,7 +123,7 @@ def main():
     
     # Do Inference
     for i, ref_img in enumerate(loader):
-        if i == 1:
+        if i == 18:
             logger.info(f"Inference for image {i}")
             fname = str(i).zfill(5) + '.png'
             ref_img = ref_img.to(device)
@@ -132,7 +131,7 @@ def main():
             
             # Initialize circle parameters [radius, x, y]
             H, W = ref_img.shape[2:]
-            radius = torch.tensor([min(H,W)/4], device=device) # Initial radius 1/4 of image size
+            radius = torch.tensor([min(H,W)/2], device=device) # Initial radius 1/4 of image size
             x_coord = torch.tensor([W/2], device=device)  # Initial x at center
             y_coord = torch.tensor([H/2], device=device)  # Initial y at center
             circle_params = torch.stack([radius, x_coord, y_coord], dim=0).unsqueeze(0)  # Shape: [1,3]
@@ -164,9 +163,20 @@ def main():
             dist = torch.sqrt((x[None, :, :] - x_coord)**2 + (y[None, :, :] - y_coord)**2)
             circle_mask[:, 0] = (dist >= radius).float()
 
+            # Denormalize and prepare samples for saving
+            y_n = y_n * std_image.to(device) + mean_image.to(device)
+            y_n = torch.clamp(y_n, 0, 1)
+
+            ref_img = ref_img * std_image.to(device) + mean_image.to(device)
+
+            sample_img = sample['img'] * std_image.to(device) + mean_image.to(device)
+            sample_img = torch.clamp(sample_img, 0, 1)
+
+
+
             plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n), cmap='gray')
             plt.imsave(os.path.join(out_path, 'label', 'img_'+fname), clear_color(ref_img), cmap='gray')
-            plt.imsave(os.path.join(out_path, 'recon', 'img_'+fname), clear_color(sample['img']), cmap='gray')
+            plt.imsave(os.path.join(out_path, 'recon', 'img_'+fname), clear_color(sample_img), cmap='gray')
             plt.imsave(os.path.join(out_path, 'recon', 'ker_'+fname), clear_color(circle_mask), cmap='gray')
             break
 

@@ -783,7 +783,7 @@ class BlindFDPS(DDPM):
             # Here, we implement gradually increasing scale that shows stable performance,
             # while we reported the result with a constant scale in the paper.
             scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
-            scale = {k: scale for k in output.keys()}
+            scale = {k: scale * 10 for k in output.keys()}
             updated, norm = measurement_cond_fn(x_prev=x_prev,
                                                 x_t=x_t,
                                                 x_0_hat=x_0_hat,
