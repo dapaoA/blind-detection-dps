@@ -1,7 +1,12 @@
 # Ignore all .pth files in generated_images directory
 
+*.pth
+*.pt
+*.ckpt
+*.png
 
 batch_visualizations/
 generated_images_for_debug/
 generated_images_for_debug_bottom/
 blind_blur/
+tensorboard_logs/
