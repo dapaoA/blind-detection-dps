@@ -1,10 +1,10 @@
 import os
-import torch
-import yaml
-import numpy as np
-from PIL import Image
 
+import numpy as np
+import torch
 import torch.nn.functional as F
+import yaml
+from PIL import Image
 
 
 def clear(x):
@@ -92,8 +92,8 @@ def extract_image_patches(images, ksizes, strides, rates, padding='same'):
     elif padding == 'valid':
         pass
     else:
-        raise NotImplementedError('Unsupported padding type: {}.\
-                Only "same" or "valid" are supported.'.format(padding))
+        raise NotImplementedError(f'Unsupported padding type: {padding}.\
+                Only "same" or "valid" are supported.')
 
     unfold = torch.nn.Unfold(kernel_size=ksizes,
                              dilation=rates,
@@ -125,7 +125,7 @@ def random_bbox(config, batch_size):
         bbox_list.append((t, l, h, w))
         bbox_list = bbox_list * batch_size
     else:
-        for i in range(batch_size):
+        for _i in range(batch_size):
             t = np.random.randint(margin_height, maxt)
             l = np.random.randint(margin_width, maxl)
             bbox_list.append((t, l, h, w))
@@ -135,8 +135,6 @@ def random_bbox(config, batch_size):
 
 def test_random_bbox():
     image_shape = [256, 256, 3]
-    mask_shape = [128, 128]
-    margin = [0, 0]
     bbox = random_bbox(image_shape)
     return bbox
 
@@ -154,8 +152,6 @@ def bbox2mask(bboxes, height, width, max_delta_h, max_delta_w):
 
 def test_bbox2mask():
     image_shape = [256, 256, 3]
-    mask_shape = [128, 128]
-    margin = [0, 0]
     max_delta_shape = [32, 32]
     bbox = random_bbox(image_shape)
     mask = bbox2mask(bbox, image_shape[0], image_shape[1], max_delta_shape[0], max_delta_shape[1])
@@ -232,23 +228,6 @@ def reduce_mean(x, axis=None, keepdim=False):
     for i in sorted(axis, reverse=True):
         x = torch.mean(x, dim=i, keepdim=keepdim)
     return x
-
-
-def normalize_np(img):
-    """ Normalize img in arbitrary range to [0, 1] """
-    img -= np.min(img)
-    img /= np.max(img)
-    return img
-
-
-def clear_color(x):
-    x = x.detach().cpu().squeeze().numpy()
-    return normalize_np(np.transpose(x, (1, 2, 0)))
-
-
-def clear(x):
-    x = x.detach().cpu().squeeze().numpy()
-    return normalize_np(x)
 
 
 def reduce_std(x, axis=None, keepdim=False):
@@ -506,7 +485,7 @@ def deprocess(img):
 
 # get configs
 def get_config(config):
-    with open(config, 'r') as stream:
+    with open(config) as stream:
         return yaml.load(stream, Loader=yaml.FullLoader)
 
 
@@ -523,7 +502,7 @@ def get_model_list(dirname, key, iteration=0):
         last_model_name = gen_models[-1]
     else:
         for model_name in gen_models:
-            if '{:0>8d}'.format(iteration) in model_name:
+            if f'{iteration:0>8d}' in model_name:
                 return model_name
         raise ValueError('Not found models with this iteration')
     return last_model_name

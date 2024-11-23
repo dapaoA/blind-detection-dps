@@ -1,16 +1,15 @@
+import enum
 import math
 import os
-from functools import partial
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-import enum
 
 from util.img_utils import clear_color
+
 from .posterior_mean_variance import get_mean_processor, get_var_processor
-
-
 
 __SAMPLER__ = {}
 
@@ -129,7 +128,7 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
 def register_sampler(name: str):
     def wrapper(cls):
         if __SAMPLER__.get(name, None):
-            raise NameError(f"Name {name} is already registered!") 
+            raise NameError(f"Name {name} is already registered!")
         __SAMPLER__[name] = cls
         return cls
     return wrapper
@@ -150,19 +149,19 @@ def create_sampler(sampler,
                    clip_denoised,
                    rescale_timesteps,
                    timestep_respacing=""):
-    
+
     sampler = get_sampler(name=sampler)
-    
+
     betas = get_named_beta_schedule(noise_schedule, steps)
     if not timestep_respacing:
         timestep_respacing = [steps]
-         
+
     return sampler(use_timesteps=space_timesteps(steps, timestep_respacing),
                    betas=betas,
                    model_mean_type=model_mean_type,
                    model_var_type=model_var_type,
                    dynamic_threshold=dynamic_threshold,
-                   clip_denoised=clip_denoised, 
+                   clip_denoised=clip_denoised,
                    rescale_timesteps=rescale_timesteps)
 
 
@@ -222,8 +221,8 @@ class GaussianDiffusion:
         self.mean_processor = get_mean_processor(model_mean_type,
                                                  betas=betas,
                                                  dynamic_threshold=dynamic_threshold,
-                                                 clip_denoised=clip_denoised)    
-    
+                                                 clip_denoised=clip_denoised)
+
         self.var_processor = get_var_processor(model_var_type,
                                                betas=betas)
 
@@ -235,7 +234,7 @@ class GaussianDiffusion:
         :param t: the number of diffusion steps (minus 1). Here, 0 means one step.
         :return: A tuple (mean, variance, log_variance), all of x_start's shape.
         """
-        
+
         mean = extract_and_expand(self.sqrt_alphas_cumprod, t, x_start) * x_start
         variance = extract_and_expand(1.0 - self.alphas_cumprod, t, x_start)
         log_variance = extract_and_expand(self.log_one_minus_alphas_cumprod, t, x_start)
@@ -256,7 +255,7 @@ class GaussianDiffusion:
         if noise is None:
             noise = torch.randn_like(x_start)
         assert noise.shape == x_start.shape
-        
+
         coef1 = extract_and_expand(self.sqrt_alphas_cumprod, t, x_start)
         coef2 = extract_and_expand(self.sqrt_one_minus_alphas_cumprod, t, x_start)
 
@@ -293,14 +292,14 @@ class GaussianDiffusion:
                       save_root):
         """
         The function used for sampling from noise.
-        """ 
+        """
         img = x_start
         device = x_start.device
 
         pbar = tqdm(list(range(self.num_timesteps))[::-1])
         for idx in pbar:
             time = torch.tensor([idx] * img.shape[0], device=device)
-            
+
             img = img.requires_grad_()
             out = self.p_sample(x=img, t=time, model=model)
             if measurement_cond_fn is not None:
@@ -324,20 +323,20 @@ class GaussianDiffusion:
                     file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
                     plt.imsave(file_path, clear_color(img))
 
-        return img       
-        
+        return img
+
     def p_sample(self, model, x, t):
         raise NotImplementedError
 
     def p_mean_variance(self, model, x, t):
         model_output = model(x, self._scale_timesteps(t))
-        
+
         # In the case of "learned" variance, model will give twice channels.
         if model_output.shape[1] == 2 * x.shape[1]:
             model_output, model_var_values = torch.split(model_output, x.shape[1], dim=1)
         else:
-            # The name of variable is wrong. 
-            # This will just provide shape information, and 
+            # The name of variable is wrong.
+            # This will just provide shape information, and
             # will not be used for calculating something important in variance.
             model_var_values = model_output
 
@@ -351,13 +350,13 @@ class GaussianDiffusion:
                 'log_variance': model_log_variance,
                 'pred_xstart': pred_xstart}
 
-    
+
     def _scale_timesteps(self, t):
         if self.rescale_timesteps:
             return t.float() * (1000.0 / self.num_timesteps)
         return t
-    
-    
+
+
     def training_losses(self, model, x_start, t):
         """
         Compute training losses for a single timestep.
@@ -520,7 +519,7 @@ def space_timesteps(num_timesteps, section_counts):
         section_counts = [int(x) for x in section_counts.split(",")]
     elif isinstance(section_counts, int):
         section_counts = [section_counts]
-    
+
     size_per = num_timesteps // len(section_counts)
     extra = num_timesteps % len(section_counts)
     start_idx = 0
@@ -628,9 +627,9 @@ class DDPM(SpacedDiffusion):
 class DDIM(SpacedDiffusion):
     def p_sample(self, model, x, t, eta=0.0):
         out = self.p_mean_variance(model, x, t)
-        
+
         eps = self.predict_eps_from_x_start(x, t, out['pred_xstart'])
-        
+
         alpha_bar = extract_and_expand(self.alphas_cumprod, t, x)
         alpha_bar_prev = extract_and_expand(self.alphas_cumprod_prev, t, x)
         sigma = (
@@ -648,7 +647,7 @@ class DDIM(SpacedDiffusion):
         sample = mean_pred
         if t != 0:
             sample += sigma * noise
-        
+
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
     def predict_eps_from_x_start(self, x_t, t, pred_xstart):
@@ -658,48 +657,48 @@ class DDIM(SpacedDiffusion):
 
 @register_sampler(name='blind_dps')
 class BlindDPS(DDPM):
-    def p_sample_loop(self, 
+    def p_sample_loop(self,
                       model: dict,
                       x_start: dict,
                       measurement,
                       measurement_cond_fn,
                       record,
                       save_root):
-       
+
         assert isinstance(model, dict) and isinstance(x_start, dict)
-        
-        # initialize 
-        x_prev = x_start 
-        device = list(x_prev.values())[0].device 
+
+        # initialize
+        x_prev = x_start
+        device = list(x_prev.values())[0].device
         batch_size = list(x_prev.values())[0].shape[0]
-        
+
         pbar = tqdm(list(range(self.num_timesteps))[::-1])
         for idx in pbar:
             time = torch.tensor([idx] * batch_size, device=device)
 
-            x_prev = dict((k, v.requires_grad_()) for k, v in x_prev.items())
-            
-            # diffusion prior cases 
-            output = dict() 
+            x_prev = {k: v.requires_grad_() for k, v in x_prev.items()}
+
+            # diffusion prior cases
+            output = {}
             for k in model:
-                output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})  
-            
-            # uniform prior cases 
+                output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})
+
+            # uniform prior cases
             for k in x_prev:
                 if output.get(k, None) is None:
                     output.update({k: x_prev[k]})
-        
+
             # Normalize the kernel (TODO: can we generalize this part?)
-            kernel_hatx0 = output['kernel']['pred_xstart'] 
+            kernel_hatx0 = output['kernel']['pred_xstart']
             kernel_hatx0 = (kernel_hatx0 + 1.0) / 2.0
             kernel_hatx0 /= kernel_hatx0.sum()
             output['kernel'].update({'pred_xstart': kernel_hatx0})
 
             # give condition
             noisy_measurement = self.q_sample(measurement, t=time)
-            x_t = dict((k, v['sample']) for k, v in output.items())
-            x_0_hat = dict((k, v['pred_xstart']) for k, v in output.items())
-            
+            x_t = {k: v['sample'] for k, v in output.items()}
+            x_0_hat = {k: v['pred_xstart'] for k, v in output.items()}
+
             # Here, we implement gradually increasing scale that shows stable performance,
             # while we reported the result with a constant scale in the paper.
             scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
@@ -710,8 +709,8 @@ class BlindDPS(DDPM):
                                                 x_prev=x_prev,
                                                 x_0_hat=x_0_hat,
                                                 scale=scale)
-            
-            updated = dict((k, v.detach_()) for k, v in updated.items())
+
+            updated = {k: v.detach_() for k, v in updated.items()}
             x_prev = updated
 
             pbar.set_postfix({'norm': norm.item()}, refresh=False)
@@ -729,28 +728,28 @@ class BlindDPS(DDPM):
 
 @register_sampler(name='blind_fdps')
 class BlindFDPS(DDPM):
-    def p_sample_loop(self, 
+    def p_sample_loop(self,
                       model: dict,
                       x_start: dict,
                       measurement,
                       measurement_cond_fn,
                       record,
                       save_root):
-       
+
         assert isinstance(model, dict) and isinstance(x_start, dict)
-        
-        # initialize 
-        x_prev = x_start 
-        device = list(x_prev.values())[0].device 
+
+        # initialize
+        x_prev = x_start
+        device = list(x_prev.values())[0].device
         batch_size = list(x_prev.values())[0].shape[0]
         pbar = tqdm(list(range(self.num_timesteps))[::-1])
         for idx in pbar:
             time = torch.tensor([idx] * batch_size, device=device)
 
-            x_prev = dict((k, v.requires_grad_()) for k, v in x_prev.items())
-            
-            # diffusion prior cases 
-            output = dict() 
+            x_prev = {k: v.requires_grad_() for k, v in x_prev.items()}
+
+            # diffusion prior cases
+            output = {}
             for k in model:
                 if k == 'img':
                     output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})
@@ -759,8 +758,8 @@ class BlindFDPS(DDPM):
                     H, W = x_prev['img'].shape[-2:]
 
                     # Create meshgrid
-                    y, x = torch.meshgrid(torch.arange(H, device=device), 
-                                        torch.arange(W, device=device))        
+                    y, x = torch.meshgrid(torch.arange(H, device=device),
+                                        torch.arange(W, device=device))
                     # Create circle mask
                     circle_mask = torch.ones((batch_size, 1, H, W), device=device)
                     # Vectorized computation for all batches at once
@@ -777,9 +776,9 @@ class BlindFDPS(DDPM):
                         'sample': circle_mask
                     }})
 
-            x_t = dict((k, v['sample']) for k, v in output.items())
-            x_0_hat = dict((k, v['pred_xstart']) for k, v in output.items())
-            
+            x_t = {k: v['sample'] for k, v in output.items()}
+            x_0_hat = {k: v['pred_xstart'] for k, v in output.items()}
+
             # Here, we implement gradually increasing scale that shows stable performance,
             # while we reported the result with a constant scale in the paper.
             scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
@@ -789,8 +788,8 @@ class BlindFDPS(DDPM):
                                                 x_0_hat=x_0_hat,
                                                 measurement=measurement,
                                                 scale=scale)
-            
-            updated = dict((k, v.detach_()) for k, v in updated.items())
+
+            updated = {k: v.detach_() for k, v in updated.items()}
             x_prev = updated
 
             pbar.set_postfix({'norm': norm.item()}, refresh=False)
@@ -807,7 +806,7 @@ class BlindFDPS(DDPM):
                         elif k != 'img':
                             plt.imsave(file_path, clear_color(output[k]['sample']), cmap='gray' if is_grey else None)
                         if k == 'img':
-                            save_dir = os.path.join(save_root, f'progress/img_xhat')
+                            save_dir = os.path.join(save_root, 'progress/img_xhat')
                             if not os.path.isdir(save_dir):
                                 os.makedirs(save_dir, exist_ok=True)
                             file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
@@ -816,6 +815,78 @@ class BlindFDPS(DDPM):
             #     exit()
         return updated
 
+
+@register_sampler(name='blind_sdps')
+class BlindSDPS(DDPM):
+    def p_sample_loop(self,
+                      model: dict,
+                      x_start: dict,
+                      measurement,
+                      measurement_cond_fn,
+                      record,
+                      save_root):
+
+        assert isinstance(model, dict) and isinstance(x_start, dict)
+
+        # initialize
+        x_prev = x_start
+        device = list(x_prev.values())[0].device
+        batch_size = list(x_prev.values())[0].shape[0]
+        pbar = tqdm(list(range(self.num_timesteps))[::-1])
+        for idx in pbar:
+            time = torch.tensor([idx] * batch_size, device=device)
+
+            x_prev = {k: v.requires_grad_() for k, v in x_prev.items()}
+
+            # diffusion prior cases
+            output = {}
+            for k in model:
+                if k == 'img':
+                    output.update({k: self.p_sample(x=x_prev[k], t=time, model=model[k])})
+                else:
+                    output.update({k: {
+                        'pred_xstart': x_prev[k],
+                        'sample': x_prev[k]
+                    }})
+
+            x_t = {k: v['sample'] for k, v in output.items()}
+            x_0_hat = {k: v['pred_xstart'] for k, v in output.items()}
+
+            # Here, we implement gradually increasing scale that shows stable performance,
+            # while we reported the result with a constant scale in the paper.
+            standard_scale = torch.from_numpy(self.sqrt_alphas_cumprod).to(time.device)[time].float()
+            scale = {k: standard_scale for k in output.keys()}
+            updated, norm = measurement_cond_fn(x_prev=x_prev,
+                                                x_t=x_t,
+                                                x_0_hat=x_0_hat,
+                                                measurement=measurement,
+                                                scale=scale)
+
+            updated = {k: v.detach_() for k, v in updated.items()}
+            x_prev = updated
+
+            pbar.set_postfix({'norm': norm.item()}, refresh=False)
+            is_grey = True if updated['img'].shape[0] == 1 else False
+            if record:
+                if idx % 50 == 0:
+                    for k, v in updated.items():
+                        save_dir = os.path.join(save_root, f'progress/{k}')
+                        if not os.path.isdir(save_dir):
+                            os.makedirs(save_dir, exist_ok=True)
+                        file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
+                        if k == 'img':
+                            plt.imsave(file_path, clear_color(v), cmap='gray' if is_grey else None)
+                        elif k != 'img':
+                            plt.imsave(file_path, clear_color(output[k]['sample']), cmap='gray' if is_grey else None)
+                        if k == 'img':
+                            save_dir = os.path.join(save_root, 'progress/img_xhat')
+                            if not os.path.isdir(save_dir):
+                                os.makedirs(save_dir, exist_ok=True)
+                            file_path = os.path.join(save_dir, f"x_{str(idx).zfill(4)}.png")
+                            plt.imsave(file_path, clear_color(x_0_hat[k]), cmap='gray' if is_grey else None)
+            # if idx == 995:
+            #     exit()
+        return updated
 # =================
 # Helper functions
 # =================
@@ -882,7 +953,7 @@ def expand_as(array, target):
         array = torch.from_numpy(array)
     elif isinstance(array, np.float):
         array = torch.tensor([array])
-   
+
     while array.ndim < target.ndim:
         array = array.unsqueeze(-1)
 

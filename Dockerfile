@@ -9,7 +9,7 @@ RUN ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
 RUN apt-get -y update && apt-get install -y git wget curl && apt-get upgrade python3 -y && apt-get install python3-pip -y
 
 #### 1. Install Pytorch
-RUN pip3 install torch torchvision torchaudio
+RUN pip3 install torch torchvision torchaudio ruff
 
 #### 2. Install other dependencies
 WORKDIR /usr/app

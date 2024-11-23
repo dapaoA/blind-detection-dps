@@ -3,14 +3,13 @@ Logger copied from OpenAI baselines to avoid extra RL-based dependencies:
 https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/logger.py
 """
 
-import os
-import sys
-import shutil
-import os.path as osp
-import json
-import time
 import datetime
+import json
+import os
+import os.path as osp
+import sys
 import tempfile
+import time
 import warnings
 from collections import defaultdict
 from contextlib import contextmanager
@@ -23,12 +22,12 @@ ERROR = 40
 DISABLED = 50
 
 
-class KVWriter(object):
+class KVWriter:
     def writekvs(self, kvs):
         raise NotImplementedError
 
 
-class SeqWriter(object):
+class SeqWriter:
     def writeseq(self, seq):
         raise NotImplementedError
 
@@ -36,11 +35,11 @@ class SeqWriter(object):
 class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
-            self.file = open(filename_or_file, "wt")
+            self.file = open(filename_or_file, "w")
             self.own_file = True
         else:
             assert hasattr(filename_or_file, "read"), (
-                "expected file or str, got %s" % filename_or_file
+                f"expected file or str, got {filename_or_file}"
             )
             self.file = filename_or_file
             self.own_file = False
@@ -50,7 +49,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
         key2str = {}
         for (key, val) in sorted(kvs.items()):
             if hasattr(val, "__float__"):
-                valstr = "%-8.3g" % val
+                valstr = f"{val:<8.3g}"
             else:
                 valstr = str(val)
             key2str[self._truncate(key)] = self._truncate(valstr)
@@ -68,8 +67,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
         lines = [dashes]
         for (key, val) in sorted(key2str.items(), key=lambda kv: kv[0].lower()):
             lines.append(
-                "| %s%s | %s%s |"
-                % (key, " " * (keywidth - len(key)), val, " " * (valwidth - len(val)))
+                "| {}{} | {}{} |".format(key, " " * (keywidth - len(key)), val, " " * (valwidth - len(val)))
             )
         lines.append(dashes)
         self.file.write("\n".join(lines) + "\n")
@@ -97,7 +95,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
 class JSONOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, "wt")
+        self.file = open(filename, "w")
 
     def writekvs(self, kvs):
         for k, v in sorted(kvs.items()):
@@ -112,7 +110,7 @@ class JSONOutputFormat(KVWriter):
 
 class CSVOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, "w+t")
+        self.file = open(filename, "w+")
         self.keys = []
         self.sep = ","
 
@@ -159,8 +157,8 @@ class TensorBoardOutputFormat(KVWriter):
         prefix = "events"
         path = osp.join(osp.abspath(dir), prefix)
         import tensorflow as tf
-        from tensorflow.python import pywrap_tensorflow
         from tensorflow.core.util import event_pb2
+        from tensorflow.python import pywrap_tensorflow
         from tensorflow.python.util import compat
 
         self.tf = tf
@@ -193,15 +191,15 @@ def make_output_format(format, ev_dir, log_suffix=""):
     if format == "stdout":
         return HumanOutputFormat(sys.stdout)
     elif format == "log":
-        return HumanOutputFormat(osp.join(ev_dir, "log%s.txt" % log_suffix))
+        return HumanOutputFormat(osp.join(ev_dir, f"log{log_suffix}.txt"))
     elif format == "json":
-        return JSONOutputFormat(osp.join(ev_dir, "progress%s.json" % log_suffix))
+        return JSONOutputFormat(osp.join(ev_dir, f"progress{log_suffix}.json"))
     elif format == "csv":
-        return CSVOutputFormat(osp.join(ev_dir, "progress%s.csv" % log_suffix))
+        return CSVOutputFormat(osp.join(ev_dir, f"progress{log_suffix}.csv"))
     elif format == "tensorboard":
-        return TensorBoardOutputFormat(osp.join(ev_dir, "tb%s" % log_suffix))
+        return TensorBoardOutputFormat(osp.join(ev_dir, f"tb{log_suffix}"))
     else:
-        raise ValueError("Unknown format specified: %s" % (format,))
+        raise ValueError(f"Unknown format specified: {format}")
 
 
 # ================================================================
@@ -329,7 +327,7 @@ def get_current():
     return Logger.CURRENT
 
 
-class Logger(object):
+class Logger:
     DEFAULT = None  # A logger with no output files. (See right below class definition)
     # So that you can still log to the terminal without setting up any output files
     CURRENT = None  # Current logger being used by the free functions above
@@ -427,9 +425,7 @@ def mpi_weighted_mean(comm, local_name2valcount):
                 except ValueError:
                     if comm.rank == 0:
                         warnings.warn(
-                            "WARNING: tried to compute mean on non-float {}={}".format(
-                                name, val
-                            )
+                            f"WARNING: tried to compute mean on non-float {name}={val}"
                         )
                 else:
                     name2sum[name] += val * count
@@ -468,7 +464,7 @@ def configure(dir=None, format_strs=None, comm=None, log_suffix=""):
 
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:
-        log("Logging to %s" % dir)
+        log(f"Logging to {dir}")
 
 
 def _configure_default_logger():

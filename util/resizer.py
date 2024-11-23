@@ -1,13 +1,14 @@
 # This code was taken from: https://github.com/assafshocher/resizer by Assaf Shocher
+from math import pi
+
 import numpy as np
 import torch
-from math import pi
 from torch import nn
 
 
 class Resizer(nn.Module):
     def __init__(self, in_shape, scale_factor=None, output_shape=None, kernel=None, antialiasing=True):
-        super(Resizer, self).__init__()
+        super().__init__()
 
         # First standardize values and fill missing arguments (if needed) by deriving scale from output shape or vice versa
         scale_factor, output_shape = self.fix_scale_and_size(in_shape, output_shape, scale_factor)

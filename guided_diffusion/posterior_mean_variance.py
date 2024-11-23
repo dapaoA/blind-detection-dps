@@ -5,8 +5,6 @@ import torch
 
 from util.img_utils import dynamic_thresholding
 
-
-
 # ====================
 # Model Mean Processor
 # ====================
@@ -23,7 +21,7 @@ def register_mean_processor(name: str):
 
 def get_mean_processor(name: str, **kwargs):
     if __MODEL_MEAN_PROCESSOR__.get(name, None) is None:
-        raise NameError(f"Name {name} is not defined.") 
+        raise NameError(f"Name {name} is not defined.")
     return __MODEL_MEAN_PROCESSOR__[name](**kwargs)
 
 class MeanProcessor(ABC):
@@ -54,12 +52,12 @@ class PreviousXMeanProcessor(MeanProcessor):
 
         self.posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0-alphas_cumprod)
         self.posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
-    
+
     def predict_xstart(self, x_t, t, x_prev):
         coef1 = extract_and_expand(1.0/self.posterior_mean_coef1, t, x_t)
         coef2 = extract_and_expand(self.posterior_mean_coef2/self.posterior_mean_coef1, t, x_t)
         return coef1 * x_prev - coef2 * x_t
-    
+
     def get_mean_and_xstart(self, x, t, model_output):
         mean = model_output
         pred_xstart = self.process_xstart(self.predict_xstart(x, t, model_output))
@@ -100,7 +98,7 @@ class EpsilonXMeanProcessor(MeanProcessor):
         alphas = 1.0 - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
         alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-        
+
         self.sqrt_recip_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod)
         self.sqrt_recipm1_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod - 1)
         self.posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0-alphas_cumprod)
@@ -116,7 +114,7 @@ class EpsilonXMeanProcessor(MeanProcessor):
         coef1 = extract_and_expand(self.posterior_mean_coef1, t, x_start)
         coef2 = extract_and_expand(self.posterior_mean_coef2, t, x_t)
         return coef1 * x_start + coef2 * x_t
-    
+
     def predict_xstart(self, x_t, t, eps):
         coef1 = extract_and_expand(self.sqrt_recip_alphas_cumprod, t, x_t)
         coef2 = extract_and_expand(self.sqrt_recipm1_alphas_cumprod, t, eps)
@@ -144,7 +142,7 @@ def register_var_processor(name: str):
 
 def get_var_processor(name: str, **kwargs):
     if __MODEL_VAR_PROCESSOR__.get(name, None) is None:
-        raise NameError(f"Name {name} is not defined.") 
+        raise NameError(f"Name {name} is not defined.")
     return __MODEL_VAR_PROCESSOR__[name](**kwargs)
 
 class VarianceProcessor(ABC):
@@ -192,7 +190,7 @@ class FixedLargeVarianceProcessor(VarianceProcessor):
     def get_variance(self, x, t):
         model_variance = np.append(self.posterior_variance[1], self.betas[1:])
         model_log_variance = np.log(model_variance)
-    
+
         model_variance = extract_and_expand(model_variance, t, x)
         model_log_variance = extract_and_expand(model_log_variance, t, x)
 
@@ -257,7 +255,7 @@ def expand_as(array, target):
         array = torch.from_numpy(array)
     elif isinstance(array, np.float):
         array = torch.tensor([array])
-   
+
     while array.ndim < target.ndim:
         array = array.unsqueeze(-1)
 

@@ -1,13 +1,14 @@
+import matplotlib.pyplot as plt
 import numpy as np
-import torch
 import scipy
+import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
-import matplotlib.pyplot as plt
-from motionblur.motionblur import Kernel
-from .fastmri_utils import fft2c_new, ifft2c_new
 
+from motionblur.motionblur import Kernel
+
+from .fastmri_utils import fft2c_new, ifft2c_new
 
 """
 Helper functions for new types of inverse problems
@@ -39,7 +40,7 @@ def ifft2_m(x):
 def clear_color(x: torch.Tensor) -> np.ndarray:
     if torch.is_complex(x):
         x = torch.abs(x)
-    
+
     if x.shape[1] == 3:
         x = x.detach().cpu().squeeze().numpy()
         return normalize_np(np.transpose(x, (1,2,0)))
@@ -48,12 +49,17 @@ def clear_color(x: torch.Tensor) -> np.ndarray:
         return normalize_np(x)
     else:
         raise NotImplementedError
-     
 
 def normalize_np(img):
     """ Normalize img in arbitrary range to [0, 1] """
-    img -= np.min(img)
-    img /= np.max(img)
+    min_val = np.min(img)
+    max_val = np.max(img)
+
+    # If image is uniform/constant color, return as-is
+    if max_val == min_val:
+        return img
+
+    img = (img - min_val) / (max_val - min_val)
     return img
 
 
@@ -283,19 +289,19 @@ class Blurkernel(nn.Module):
             k = scipy.ndimage.gaussian_filter(n, sigma=self.std)
             k = torch.from_numpy(k)
             self.k = k
-            for name, f in self.named_parameters():
+            for _name, f in self.named_parameters():
                 f.data.copy_(k)
         elif self.blur_type == "motion":
             k = Kernel(size=(self.kernel_size, self.kernel_size), intensity=self.std).kernelMatrix
             k = torch.from_numpy(k)
             self.k = k
-            for name, f in self.named_parameters():
+            for _name, f in self.named_parameters():
                 f.data.copy_(k)
 
     def update_weights(self, k):
         if not torch.is_tensor(k):
             k = torch.from_numpy(k).to(self.device)
-        for name, f in self.named_parameters():
+        for _name, f in self.named_parameters():
             f.data.copy_(k)
 
     def get_kernel(self):
@@ -322,7 +328,7 @@ def perform_tilt(x, tilt, image_size: int, device):
 def generate_tilt_map(img_h: int, img_w: int, kernel_size: int, device):
     M = 500
     N = 32
-    
+
     u = torch.zeros([img_h, img_w], device=device)
     v = torch.zeros([img_h, img_w], device=device)
 
@@ -345,11 +351,11 @@ def generate_tilt_map(img_h: int, img_w: int, kernel_size: int, device):
         N_v = F.conv2d(N_v_tmp, kernel, padding="same")[0, 0, ...]
         u[x - N:x + N, y - N:y + N] += N_u * S
         v[x - N:x + N, y - N:y + N] += N_v * S
-    
+
     tilt_map = torch.stack((u, v), dim=0).unsqueeze(0)
     return tilt_map
-     
-class exact_posterior():
+
+class exact_posterior:
     def __init__(self, betas, sigma_0, label_dim, input_dim):
         self.betas = betas
         self.sigma_0 = sigma_0
@@ -410,9 +416,9 @@ def total_variation_loss(img, weight):
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     import numpy as np
     from torch import nn
-    import matplotlib.pyplot as plt
     device = 'cuda:0'
     load_path = '/media/harry/tomo/FFHQ/256/test/00000.png'
     img = torch.tensor(plt.imread(load_path)[:, :, :3])  #rgb

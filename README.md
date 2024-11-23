@@ -89,6 +89,10 @@ docker run -it --rm --gpus=all `
   -v ./bkse:/usr/app/bkse:ro `
   blind-dps-docker
 
+# check and fix code style
+ruff check . --fix
+
+
 ### 4) Inference
 
 ```

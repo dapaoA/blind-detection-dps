@@ -1,12 +1,10 @@
 from pathlib import Path
+
+import lpips
+import matplotlib.pyplot as plt
+import torch
 from skimage.metrics import peak_signal_noise_ratio
 from tqdm import tqdm
-
-import matplotlib.pyplot as plt
-import lpips
-import numpy as np
-import torch
-
 
 device = 'cuda:0'
 loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
@@ -17,7 +15,7 @@ sigma = 0.1
 scale = 1.0
 
 
-label_root = Path(f'/media/harry/tomo/FFHQ/256_1000')
+label_root = Path('/media/harry/tomo/FFHQ/256_1000')
 
 delta_recon_root = Path(f'./results/{task}/ffhq/{factor}/{sigma}/ps/{scale}/recon')
 normal_recon_root = Path(f'./results/{task}/ffhq/{factor}/{sigma}/ps+/{scale}/recon')

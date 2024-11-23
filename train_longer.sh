@@ -15,5 +15,5 @@ for param in "${params[@]}"; do
 done
 for param in "${params[@]}"; do
     echo "Running script with parameter: $param"
-    python3 train_diffusion_augmentation.py --data_config "configs/$param.yaml"
+    python3 train_diffusion.py --data_config "configs/$param.yaml"
 done
