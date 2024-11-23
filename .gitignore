@@ -2,3 +2,14 @@
 motionblur/
 bkse/
 models/
+results/**/*.pth
+results/**/*.pt
+results/**/*.ckpt
+results/**/*.png
+
+results/batch_visualizations/
+results/generated_images_for_debug/
+results/generated_images_for_debug_bottom/
+results/blind_blur/
+results/tensorboard_logs/
+results/inpainting/
