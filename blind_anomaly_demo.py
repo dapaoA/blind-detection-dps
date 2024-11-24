@@ -103,53 +103,56 @@ def main():
 
     sdps_iteration = 2
     for i, ref_img in enumerate(loader):
-        # if i == 18:
-        #     mask = torch.ones(ref_img.shape, device=device)
-            # for _ in range(sdps_iteration):
-            _ = 0   
-            logger.info(f"Inference for image {i}")
-            fname = str(i).zfill(5) + '.png'
-            ref_img = ref_img.to(device)
-            plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_orig_'+fname), clear_color(ref_img), cmap='gray')
-            # # Forward measurement model (Ax + n)
-            # y_n = ref_img
-                # # Set initial sample
-                # # !All values will be given to operator.forward(). Please be aware it.
-                # x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
-                #         'kernel': mask}
+        if i == 1:
+            mask = torch.ones(ref_img.shape, device=device)
+            for _ in range(sdps_iteration):
+                logger.info(f"Inference for image {i}")
+                fname = str(i).zfill(5) + '.png'
+                ref_img = ref_img.to(device)
+                # Forward measurement model (Ax + n)
+                y_n = ref_img
+                # Set initial sample
+                # !All values will be given to operator.forward(). Please be aware it.
+                x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
+                        'kernel': mask}
 
-                # # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
-                # for k in x_start:
-                #     if k in model.keys():
-                #         logger.info(f"{k} will use diffusion prior")
-                #     else:
-                #         logger.info(f"{k} will use uniform prior.")
+                # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
+                for k in x_start:
+                    if k in model.keys():
+                        logger.info(f"{k} will use diffusion prior")
+                    else:
+                        logger.info(f"{k} will use uniform prior.")
 
-                # # sample
-                # print(x_start['img'].shape)
-                # sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path)
+                # sample
+                print(x_start['img'].shape)
+                sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path)
 
-                # mask = create_mask(sample, ref_img, threshold=0.5, device=device)
+                os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
 
-                # # Save original images before denormalization
-                # plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_orig_'+fname), clear_color(ref_img), cmap='gray')
-                # plt.imsave(os.path.join(out_path, 'label' + str(_), 'recon_orig_'+fname), clear_color(sample['img']), cmap='gray')
+                # Save original images before denormalization
+                plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_orig_'+fname), clear_color(ref_img), cmap='gray')
+                plt.imsave(os.path.join(out_path, 'label' + str(_), 'recon_orig_'+fname), clear_color(sample['img']), cmap='gray')
 
-                # # Denormalize images
-                # y_n = denormalize(y_n, mean_image, std_image, device)
-                # ref_img = denormalize(ref_img, mean_image, std_image, device)
-                # sample_img = denormalize(sample['img'], mean_image, std_image, device)
+                # Denormalize images
+                y_n_denorm = denormalize(y_n, mean_image, std_image, device)
+                ref_img_denorm = denormalize(ref_img, mean_image, std_image, device)
+                sample_img_denorm = denormalize(sample['img'], mean_image, std_image, device)
+                print(sample_img_denorm)
+                print(ref_img_denorm)
 
-                # # Create directories
-                # os.makedirs(os.path.join(out_path, 'input' + str(_)), exist_ok=True)
-                # os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
-                # os.makedirs(os.path.join(out_path, 'recon' + str(_)), exist_ok=True)
+                # Calculate mask using denormalized images
+                mask = create_mask(sample_img_denorm, y_n_denorm, threshold=0.2, device=device)
+                print(mask)
+                # Create directories
+                os.makedirs(os.path.join(out_path, 'input' + str(_)), exist_ok=True)
+                os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
+                os.makedirs(os.path.join(out_path, 'recon' + str(_)), exist_ok=True)
 
-                # # Save denormalized images
-                # plt.imsave(os.path.join(out_path, 'input' + str(_), fname), clear_color(y_n), cmap='gray')
-                # plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_'+fname), clear_color(ref_img), cmap='gray')
-                # plt.imsave(os.path.join(out_path, 'recon' + str(_), 'img_'+fname), clear_color(sample_img), cmap='gray')
-                # plt.imsave(os.path.join(out_path, 'recon' + str(_), 'ker_'+fname), clear_color(mask), cmap='gray')
+                # Save denormalized images
+                plt.imsave(os.path.join(out_path, 'input' + str(_), fname), clear_color(y_n), cmap='gray')
+                plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_'+fname), clear_color(ref_img_denorm), cmap='gray')
+                plt.imsave(os.path.join(out_path, 'recon' + str(_), 'img_'+fname), clear_color(sample_img_denorm), cmap='gray')
+                plt.imsave(os.path.join(out_path, 'recon' + str(_), 'ker_'+fname), clear_color(mask), cmap='gray')
 
 if __name__ == '__main__':
     main()

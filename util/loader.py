@@ -114,7 +114,7 @@ def create_circle_mask(sample, H, W, device):
     return circle_mask
 
 def create_mask(sample, ref_img, threshold=0.5, device='cuda'):
-    mask = sample['img'].to(device) - ref_img.to(device)
+    mask = torch.abs(sample.to(device) - ref_img.to(device))
     mask = (mask < threshold).float()  # Changed > to < to match instructions
     return mask
 
