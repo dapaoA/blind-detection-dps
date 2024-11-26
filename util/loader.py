@@ -4,6 +4,8 @@ import random
 import torch
 import torchvision.transforms as transforms
 import yaml
+import torch.nn.functional as F
+from torchvision.transforms import GaussianBlur
 
 from data.dataloader import get_dataloader, get_dataset
 
@@ -101,6 +103,41 @@ def denormalize(img, mean_image, std_image, device):
     outcome = torch.clamp(outcome, 0, 1)
     return outcome
 
+
+def denormalize_steps(img, mean_image, std_image, device):
+    std_outcome = img * std_image.to(device)
+    mean_outcome = std_outcome + mean_image.to(device)
+    outcome = torch.clamp(mean_outcome, 0, 1)
+    return std_outcome, mean_outcome, outcome
+
+
+def apply_gaussian_blur(mask, kernel_size=5, sigma=2.0, threshold_of_blur=0.5):
+    """
+    对mask应用高斯模糊，扩散黑色（0）区域
+    Args:
+        mask: 输入mask, 形状为 [1,C,H,W]，其中 0 表示mask区域
+        kernel_size: 高斯核大小（奇数）
+        sigma: 高斯核标准差
+        threshold_of_blur: 模糊后的二值化阈值
+    Returns:
+        模糊后的mask, 形状为 [1,C,H,W]
+    """
+    # 确保 kernel_size 是奇数
+    kernel_size = kernel_size if kernel_size % 2 == 1 else kernel_size + 1
+    
+    # 创建高斯模糊层
+    blur = GaussianBlur(kernel_size=kernel_size, sigma=sigma)
+    
+    # 先反转mask（把0变成1，1变成0）
+    mask = 1 - mask
+    
+    # 应用高斯模糊
+    mask = blur(mask)
+    
+    # 重新二值化（小于阈值的变成0，大于阈值的变成1）
+    mask = (mask < threshold_of_blur).float()
+    
+    return mask
 
 # Create circle mask from final kernel parameters
 def create_circle_mask(sample, H, W, device):

@@ -145,13 +145,10 @@ def main():
                 print(ref_img_denorm)
 
                 # Calculate mask using denormalized images
-                mask = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
+                mask = create_mask(sample['img'], y_n, threshold=0.4, device=device)
                 plt.imsave(os.path.join(out_path, 'recon' + str(_), 'mask_'+fname), clear_color(mask), cmap='gray')
                 mask = apply_gaussian_blur(mask, kernel_size=5, sigma=2.0, threshold_of_blur=0.5)
-                print(mask.shape)
-                print(mask)
                 plt.imsave(os.path.join(out_path, 'recon' + str(_), 'blurred_mask_'+fname), clear_color(mask), cmap='gray') 
-                print(mask)
                 # Create directories
                 os.makedirs(os.path.join(out_path, 'input' + str(_)), exist_ok=True)
                 os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)

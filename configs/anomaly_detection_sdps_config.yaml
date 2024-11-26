@@ -5,14 +5,14 @@ intensity: 0.5
 conditioning:
   method: emdps
   params:
-    scale: 0.0
+    scale: 10.0
     iterations:
       img: 1
       kernel: 0
 
 data:
   name: ffhq
-  root: ./data/bottle/test/broken_large/
+  root: ./data/capsule/test/crack/
 
 measurement:
   operator:
