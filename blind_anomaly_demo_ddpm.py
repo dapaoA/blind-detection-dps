@@ -117,9 +117,7 @@ def main():
                 y_n = ref_img
                 # Set initial sample
                 # !All values will be given to operator.forward(). Please be aware it.
-                x_start = {'img': torch.randn(ref_img.shape, device=device).requires_grad_(),
-                        'kernel': mask}
-
+                x_start = sampler.q_sample(ref_img, t=torch.tensor([0], device=device)).to(device)
                 # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
                 for k in x_start:
                     if k in model.keys():
@@ -128,8 +126,7 @@ def main():
                         logger.info(f"{k} will use uniform prior.")
 
                 # sample
-                print(x_start['img'].shape)
-                sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path)
+                sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path, start_t=diffusion_config['start_t'])
 
                 os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
 

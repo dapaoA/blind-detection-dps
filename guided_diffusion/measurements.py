@@ -7,7 +7,7 @@ import yaml
 from torch.nn import functional as F
 from torchvision import torch
 
-from motionblur.motionblur import Kernel
+# from motionblur.motionblur import Kernel
 from util.img_utils import Blurkernel, fft2_m, perform_tilt
 from util.resizer import Resizer
 
@@ -86,52 +86,53 @@ class SuperResolutionOperator(LinearOperator):
     def project(self, data, measurement, **kwargs):
         return data - self.transpose(self.forward(data)) + self.transpose(measurement)
 
-@register_operator(name='motion_blur')
-class MotionBlurOperator(LinearOperator):
-    def __init__(self, kernel_size, intensity, device):
-        self.device = device
-        self.kernel_size = kernel_size
-        self.conv = Blurkernel(blur_type='motion',
-                               kernel_size=kernel_size,
-                               std=intensity,
-                               device=device).to(device)  # should we keep this device term?
+# @register_operator(name='motion_blur')
+# class MotionBlurOperator(LinearOperator):
+#     def __init__(self, kernel_size, intensity, device):
+#         self.device = device
+#         self.kernel_size = kernel_size
+#         self.conv = Blurkernel(blur_type='motion',
+#                                kernel_size=kernel_size,
+#                                std=intensity,
+#                                device=device).to(device)  # should we keep this device term?
 
-        self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
-        kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
-        self.conv.update_weights(kernel)
+#         self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
+#         kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
+#         self.conv.update_weights(kernel)
 
-    def forward(self, data, **kwargs):
-        # A^T * A
-        return self.conv(data)
+#     def forward(self, data, **kwargs):
+#         # A^T * A
+#         return self.conv(data)
 
-    def transpose(self, data, **kwargs):
-        return data
+#     def transpose(self, data, **kwargs):
+#         return data
 
-    def get_kernel(self):
-        kernel = self.kernel.kernelMatrix.type(torch.float32).to(self.device)
-        return kernel.view(1, 1, self.kernel_size, self.kernel_size)
+#     def get_kernel(self):
+#         kernel = self.kernel.kernelMatrix.type(torch.float32).to(self.device)
+#         return kernel.view(1, 1, self.kernel_size, self.kernel_size)
 
 
-@register_operator(name='gaussian_blur')
-class GaussialBlurOperator(LinearOperator):
-    def __init__(self, kernel_size, intensity, device):
-        self.device = device
-        self.kernel_size = kernel_size
-        self.conv = Blurkernel(blur_type='gaussian',
-                               kernel_size=kernel_size,
-                               std=intensity,
-                               device=device).to(device)
-        self.kernel = self.conv.get_kernel()
-        self.conv.update_weights(self.kernel.type(torch.float32))
+# @register_operator(name='gaussian_blur')
+# class GaussialBlurOperator(LinearOperator):
+#     def __init__(self, kernel_size, intensity, device):
+#         self.device = device
+#         self.kernel_size = kernel_size
+#         self.conv = Blurkernel(blur_type='gaussian',
+#                                kernel_size=kernel_size,
+#                                std=intensity,
+#                                device=device).to(device)
+#         self.kernel = self.conv.get_kernel()
+#         self.conv.update_weights(self.kernel.type(torch.float32))
 
-    def forward(self, data, **kwargs):
-        return self.conv(data)
+#     def forward(self, data, **kwargs):
+#         return self.conv(data)
 
-    def transpose(self, data, **kwargs):
-        return data
+#     def transpose(self, data, **kwargs):
+#         return data
 
-    def get_kernel(self):
-        return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
+#     def get_kernel(self):
+#         return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
+
 
 @register_operator(name='inpainting')
 class InpaintingOperator(LinearOperator):

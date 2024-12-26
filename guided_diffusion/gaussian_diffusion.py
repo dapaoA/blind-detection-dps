@@ -148,7 +148,8 @@ def create_sampler(sampler,
                    dynamic_threshold,
                    clip_denoised,
                    rescale_timesteps,
-                   timestep_respacing=""):
+                   timestep_respacing="",
+                   start_t=None):
 
     sampler = get_sampler(name=sampler)
 
@@ -162,7 +163,8 @@ def create_sampler(sampler,
                    model_var_type=model_var_type,
                    dynamic_threshold=dynamic_threshold,
                    clip_denoised=clip_denoised,
-                   rescale_timesteps=rescale_timesteps)
+                   rescale_timesteps=rescale_timesteps,
+                   start_t=start_t)
 
 
 class GaussianDiffusion:
@@ -289,14 +291,23 @@ class GaussianDiffusion:
                       measurement,
                       measurement_cond_fn,
                       record,
-                      save_root):
+                      save_root,
+                      start_t=None):
         """
         The function used for sampling from noise.
+        Args:
+            start_t: Optional starting timestep. If None, starts from max timestep.
         """
         img = x_start
         device = x_start.device
-
-        pbar = tqdm(list(range(self.num_timesteps))[::-1])
+        
+        # 如果没有指定 start_t，则使用最大时刻
+        if start_t is None:
+            start_t = self.num_timesteps - 1
+            
+        # 修改时间范围从 start_t 开始
+        pbar = tqdm(list(range(start_t + 1))[::-1])
+        
         for idx in pbar:
             time = torch.tensor([idx] * img.shape[0], device=device)
 
@@ -306,7 +317,6 @@ class GaussianDiffusion:
                 # Give condition.
                 noisy_measurement = self.q_sample(measurement, t=time)
 
-                # TODO: how can we handle argument for different condition method?
                 img, distance = measurement_cond_fn(x_t=out['sample'],
                                       measurement=measurement,
                                       noisy_measurement=noisy_measurement,
@@ -553,11 +563,13 @@ class SpacedDiffusion(GaussianDiffusion):
     """
 
     def __init__(self, use_timesteps, **kwargs):
+        # 保存 start_t 并从 kwargs 中移除，这样就不会传递给父类
+        self.start_t = kwargs.pop('start_t', None)  # 如果没有 start_t，默认为 None
+        
         self.use_timesteps = set(use_timesteps)
         self.timestep_map = []
         self.original_num_steps = len(kwargs["betas"])
-
-        base_diffusion = GaussianDiffusion(**kwargs)  # pylint: disable=missing-kwoa
+        base_diffusion = GaussianDiffusion(**kwargs)
         last_alpha_cumprod = 1.0
         new_betas = []
         for i, alpha_cumprod in enumerate(base_diffusion.alphas_cumprod):
