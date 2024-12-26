@@ -824,7 +824,8 @@ class BlindSDPS(DDPM):
                       measurement,
                       measurement_cond_fn,
                       record,
-                      save_root):
+                      save_root,
+                      start_t=None):
 
         assert isinstance(model, dict) and isinstance(x_start, dict)
 
@@ -832,7 +833,14 @@ class BlindSDPS(DDPM):
         x_prev = x_start
         device = list(x_prev.values())[0].device
         batch_size = list(x_prev.values())[0].shape[0]
-        pbar = tqdm(list(range(self.num_timesteps))[::-1])
+        
+        # 如果没有指定 start_t，则使用最大时刻
+        if start_t is None:
+            start_t = self.num_timesteps - 1
+            
+        # 修改时间范围从 start_t 开始
+        pbar = tqdm(list(range(start_t + 1))[::-1])
+        
         for idx in pbar:
             time = torch.tensor([idx] * batch_size, device=device)
 
@@ -887,6 +895,7 @@ class BlindSDPS(DDPM):
             # if idx == 995:
             #     exit()
         return updated
+
 # =================
 # Helper functions
 # =================
