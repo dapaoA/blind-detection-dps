@@ -64,9 +64,9 @@ def data_transformer_list_augmentation(mean, variance, size_l, size_w, if_graysc
 
 
     # Prepare dataloader
-def prepare_dataloader(data_config, model_config, if_train=False, task_config=None, train_config=None):
-    mean_image_path = os.path.join(data_config['root'], "mean_and_std", 'mean.pth')
-    variance_path = os.path.join(data_config['root'], "mean_and_std", 'variance.pth')
+def prepare_dataloader(data_config, model_config, if_train=False, train_config=None):
+    mean_image_path = os.path.join(data_config['train_root'], "mean_and_std", 'mean.pth')
+    variance_path = os.path.join(data_config['train_root'], "mean_and_std", 'variance.pth')
     if_grayscale = model_config['grayscale']
 
     # Load mean image as grayscale
@@ -87,10 +87,10 @@ def prepare_dataloader(data_config, model_config, if_train=False, task_config=No
                                     model_config['image_size'],
                                     model_config['image_size'],
                                     if_grayscale=if_grayscale)
-    if task_config is None:
-        dataset = get_dataset(**data_config, transforms=transform)
+    if if_train:
+        dataset = get_dataset(name=data_config['name'], root=data_config['train_root'], transforms=transform)
     else:
-        dataset = get_dataset(**task_config['data'], transforms=transform)
+        dataset = get_dataset(name=data_config['name'], root=data_config['test_root'], transforms=transform)
     if train_config is None:
         loader = get_dataloader(dataset, batch_size=1, num_workers=0, train=if_train)
     else:
@@ -152,7 +152,6 @@ def create_circle_mask(sample, H, W, device):
 
 def create_mask(sample, ref_img, threshold=0.5, device='cuda'):
     mask = torch.abs(sample.to(device) - ref_img.to(device))
-    mask = (mask < threshold).float()  # Changed > to < to match instructions
     return mask
 
 def load_yaml(file_path: str) -> dict:

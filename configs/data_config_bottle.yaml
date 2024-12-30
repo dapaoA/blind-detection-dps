@@ -3,7 +3,9 @@
 #   root: ./data/leather/train/good/
 data:
   name: bottle
-  root: ./data/bottle/train/good/
+  train_root: ./data/bottle/train/good/
+  test_root: ./data/bottle/test/
+  image_paht: None
 
   
 # data:

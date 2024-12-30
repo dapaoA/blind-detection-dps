@@ -2,22 +2,33 @@ import argparse
 import os
 from functools import partial
 
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
-
+import numpy as np
 from guided_diffusion.blind_condition_methods import get_conditioning_method
 from guided_diffusion.gaussian_diffusion import create_sampler
 from guided_diffusion.measurements import get_noise, get_operator
 from guided_diffusion.unet import create_model
 from util.img_utils import clear_color
-from util.loader import create_mask, denormalize, load_yaml, prepare_dataloader, apply_gaussian_blur
+from util.loader import create_mask, denormalize, load_yaml, prepare_dataloader
 from util.logger import get_logger
+from evaluate import compute_auroc
+import matplotlib.pyplot as plt
 
 
-def load_config():
-    # Configurations
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def load_parameters():
+    """加载和处理所有配置参数"""
     parser = argparse.ArgumentParser()
+    # Configurations
     parser.add_argument('--img_model_config', type=str, default='configs/model_config.yaml')
     parser.add_argument('--kernel_model_config', type=str, default='configs/kernel_model_config.yaml')
     parser.add_argument('--diffusion_config', type=str, default='configs/diffusion_config.yaml')
@@ -29,46 +40,39 @@ def load_config():
     # Regularization
     parser.add_argument('--reg_scale', type=float, default=0.1)
     parser.add_argument('--reg_ord', type=int, default=0, choices=[0, 1])
-
+    parser.add_argument('--if_evaluate', type=str2bool, default=False)
+    parser.add_argument('--if_inference', type=str2bool, default=False)
     args = parser.parse_args()
-
-    return args
-
-def main():
-    # Configurations
-    args = load_config()
-    # logger
     logger = get_logger()
 
-    # Device setting
-    device_str = f"cuda:{args.gpu}" if torch.cuda.is_available() else 'cpu'
-    logger.info(f"Device set to {device_str}.")
-    device = torch.device(device_str)
-
-    # Load configurations
+    # Load YAML configs
     model_config = load_yaml(args.img_model_config)
     diffusion_config = load_yaml(args.diffusion_config)
     task_config = load_yaml(args.task_config)
     data_config = load_yaml(args.data_config)['data']
-    # Kernel configs to namespace save space
+    
+    # Add kernel configs to args namespace
     args.kernel = task_config["kernel"]
     args.kernel_size = task_config["kernel_size"]
     args.intensity = task_config["intensity"]
 
-    # Load model
+    return args, logger, model_config, diffusion_config, task_config, data_config
+
+def setup_model_and_task(args, logger, model_config, diffusion_config, task_config, device):
+
+    # Create model
     img_model = create_model(**model_config)
     img_model = img_model.to(device)
     img_model.eval()
-
     model = {'img': img_model, 'kernel': None}
 
-    # Prepare Operator and noise
+    # Setup measurement operator and noise
     measure_config = task_config['measurement']
     operator = get_operator(device=device, **measure_config['operator'])
     noiser = get_noise(**measure_config['noise'])
     logger.info(f"Operation: {measure_config['operator']['name']} / Noise: {measure_config['noise']['name']}")
 
-    # Prepare conditioning method
+    # Setup conditioning method
     cond_config = task_config['conditioning']
     cond_method = get_conditioning_method(cond_config['method'], operator, noiser, **cond_config['params'])
     logger.info(f"Conditioning method : {task_config['conditioning']['method']}")
@@ -83,82 +87,94 @@ def main():
     else:
         logger.info(f"Kernel regularization : L{args.reg_ord}")
 
-    # Load diffusion sampler
+    # Create sampler
     sampler = create_sampler(**diffusion_config)
-    sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=measurement_cond_fn)
+    sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=None)
 
-    # Working directory
-    out_path = os.path.join(args.save_dir, measure_config['operator']['name'])
-    logger.info(f"work directory is created as {out_path}")
+    return model, sampler, sample_fn, operator, noiser
+
+def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image):
+
+    sdps_iteration = 1
+    os.makedirs(os.path.join(out_path, 'recon'), exist_ok=True)
+    os.makedirs(os.path.join(out_path, 'mask'), exist_ok=True)
+
+    for i, ref_img_dict in enumerate(loader):
+        batch_size = ref_img_dict['image'].shape[0]
+        
+        for _ in range(sdps_iteration):
+            # Get batch data
+            ref_img = ref_img_dict['image'].to(device)
+            y_n = ref_img
+            
+            # Set initial sample
+            x_start = sampler.q_sample(ref_img, t=torch.tensor([0], device=device)).to(device)
+            
+            # Sample
+            sample = sample_fn(x_start=x_start, measurement=y_n, record=True, 
+                             save_root=out_path, start_t=diffusion_config['start_t'])
+            
+            # Process each sample in batch
+            for batch_idx in range(batch_size):
+                fname = os.path.basename(ref_img_dict['category'][batch_idx]) + '_' + ref_img_dict['name'][batch_idx]
+                
+                curr_y_n = y_n[batch_idx:batch_idx+1]
+                curr_sample = sample[batch_idx:batch_idx+1]
+                
+                # Denormalize images
+                y_n_denorm = denormalize(curr_y_n, mean_image, std_image, device)
+                sample_img_denorm = denormalize(curr_sample, mean_image, std_image, device)
+
+                # Calculate and save mask
+                curr_mask = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
+                plt.imsave(os.path.join(out_path, 'mask', fname), clear_color(curr_mask), cmap='gray')
+
+                # Save denormalized reconstruction
+                plt.imsave(os.path.join(out_path, 'recon', fname), clear_color(sample_img_denorm), cmap='gray')
+
+
+def evaluate_all(loader, out_path, save_dir=None):
+    return compute_auroc(loader, out_path)
+
+
+def main():
+    # Setup logger
+    logger = get_logger()
+
+    # Load parameters
+    args, logger, model_config, diffusion_config, task_config, data_config = load_parameters()
+    # Setup device
+    device_str = f"cuda:{args.gpu}" if torch.cuda.is_available() else 'cpu'
+    logger.info(f"Device set to {device_str}.")
+    device = torch.device(device_str)
+
+    # Setup model and task
+    model, sampler, sample_fn, operator, noiser = setup_model_and_task(
+        args, logger, model_config, diffusion_config, task_config, device
+    )
+
+    # Create output directory
+    out_path = os.path.join(args.save_dir, task_config['measurement']['operator']['name']) + '_' + data_config['name']
     os.makedirs(out_path, exist_ok=True)
-    for img_dir in ['input', 'recon', 'progress', 'label']:
-        os.makedirs(os.path.join(out_path, img_dir), exist_ok=True)
 
-
-    loader, mean_image, std_image = prepare_dataloader(data_config, model_config, if_train=False, task_config=task_config)
-    # set seed for reproduce
+    # Prepare data
+    loader, mean_image, std_image = prepare_dataloader(data_config, model_config, if_train=False)
+    
+    # Set random seed
     np.random.seed(123)
 
-    # Do Inference
+    # Run inference
+    if args.if_inference:
+        run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image)
 
-    sdps_iteration = 3
-    for i, ref_img in enumerate(loader):
-        if i == 1:
-            mask = torch.ones(ref_img.shape, device=device)
-            for _ in range(sdps_iteration):
-                logger.info(f"Inference for image {i}")
-                fname = str(i).zfill(5) + '.png'
-                ref_img = ref_img.to(device)
-                os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
+    # Run evaluation
+    if args.if_evaluate:
+        auroc = evaluate_all(loader, out_path, save_dir=out_path)
+        logger.info(f"Overall AUROC: {auroc:.4f}")
 
-                # Save original images before denormalization
-                plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_orig_'+fname), clear_color(ref_img), cmap='gray')
-                # Forward measurement model (Ax + n)
-                y_n = ref_img
-                # Set initial sample
-                # !All values will be given to operator.forward(). Please be aware it.
-                x_start = sampler.q_sample(ref_img, t=torch.tensor([0], device=device)).to(device)
-                # !prior check: keys of model (line 74) must be the same as those of x_start to use diffusion prior.
-                for k in x_start:
-                    if k in model.keys():
-                        logger.info(f"{k} will use diffusion prior")
-                    else:
-                        logger.info(f"{k} will use uniform prior.")
-
-                # sample
-                sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path, start_t=diffusion_config['start_t'])
-
-                os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
-
-                # Save original images before denormalization
-                plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_orig_'+fname), clear_color(ref_img), cmap='gray')
-                plt.imsave(os.path.join(out_path, 'label' + str(_), 'recon_orig_'+fname), clear_color(sample['img']), cmap='gray')
-
-                # Denormalize images
-                y_n_denorm = denormalize(y_n, mean_image, std_image, device)
-                ref_img_denorm = denormalize(ref_img, mean_image, std_image, device)
-                sample_img_denorm = denormalize(sample['img'], mean_image, std_image, device)
-                print(sample_img_denorm)
-                print(ref_img_denorm)
-
-                # Calculate mask using denormalized images
-                mask = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
-                os.makedirs(os.path.join(out_path, 'recon' + str(_)), exist_ok=True)
-                plt.imsave(os.path.join(out_path, 'recon' + str(_), 'mask_'+fname), clear_color(mask), cmap='gray')
-                mask = apply_gaussian_blur(mask, kernel_size=5, sigma=2.0, threshold_of_blur=0.5)
-                print(mask.shape)
-                print(mask)
-                plt.imsave(os.path.join(out_path, 'recon' + str(_), 'blurred_mask_'+fname), clear_color(mask), cmap='gray') 
-                print(mask)
-                # Create directories
-                os.makedirs(os.path.join(out_path, 'input' + str(_)), exist_ok=True)
-                os.makedirs(os.path.join(out_path, 'label' + str(_)), exist_ok=True)
-                os.makedirs(os.path.join(out_path, 'recon' + str(_)), exist_ok=True)
-
-                # Save denormalized images
-                plt.imsave(os.path.join(out_path, 'input' + str(_), fname), clear_color(y_n), cmap='gray')
-                plt.imsave(os.path.join(out_path, 'label' + str(_), 'img_'+fname), clear_color(ref_img_denorm), cmap='gray')
-                plt.imsave(os.path.join(out_path, 'recon' + str(_), 'img_'+fname), clear_color(sample_img_denorm), cmap='gray')
+    # 保存AUROC
+    with open(os.path.join(out_path, 'auroc.txt'), 'w') as f:
+        f.write(f"AUROC: {auroc:.4f}")
 
 if __name__ == '__main__':
     main()

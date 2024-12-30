@@ -66,7 +66,7 @@ def train(model, loader, sampler, optimizer, epochs,
         for i, batch in enumerate(progress_bar):
             optimizer.zero_grad()
             # Move data to device
-            x_start = batch.to(device)
+            x_start = batch['image'].to(device)
 
             # Generate random timesteps
             t = torch.randint(0, sampler.num_timesteps, (x_start.shape[0],), device=device).long()

@@ -296,8 +296,13 @@ class GaussianDiffusion:
         """
         The function used for sampling from noise.
         Args:
+            model: Either a model or a dict of models. If dict, only 'img' key is used.
             start_t: Optional starting timestep. If None, starts from max timestep.
         """
+        # 处理模型输入
+        if isinstance(model, dict):
+            model = model.get('img', model)  # 如果有'img'键就用它，否则使用原始model
+            
         img = x_start
         device = x_start.device
         
