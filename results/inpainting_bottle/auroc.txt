@@ -1,1 +1,1 @@
-AUROC: nan
+AUROC: 0.5937

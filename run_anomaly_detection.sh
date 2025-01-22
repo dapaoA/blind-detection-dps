@@ -51,4 +51,4 @@ python3 blind_anomaly_demo_ddpm.py \
     --reg_ord=1 \
     --reg_scale=1.0 \
     --if_inference=0 \
-    --if_evaluate=1    
+    --if_evaluate=0    

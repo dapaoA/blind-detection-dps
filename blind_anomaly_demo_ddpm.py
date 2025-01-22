@@ -98,6 +98,8 @@ def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device
     sdps_iteration = 1
     os.makedirs(os.path.join(out_path, 'recon'), exist_ok=True)
     os.makedirs(os.path.join(out_path, 'mask'), exist_ok=True)
+    os.makedirs(os.path.join(out_path, 'mask_norm'), exist_ok=True)
+    os.makedirs(os.path.join(out_path, 'progress'), exist_ok=True)
 
     for i, ref_img_dict in enumerate(loader):
         batch_size = ref_img_dict['image'].shape[0]
@@ -111,7 +113,7 @@ def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device
             x_start = sampler.q_sample(ref_img, t=torch.tensor([0], device=device)).to(device)
             
             # Sample
-            sample = sample_fn(x_start=x_start, measurement=y_n, record=True, 
+            sample = sample_fn(x_start=x_start, measurement=y_n, record=False, 
                              save_root=out_path, start_t=diffusion_config['start_t'])
             
             # Process each sample in batch
@@ -121,15 +123,19 @@ def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device
                 curr_y_n = y_n[batch_idx:batch_idx+1]
                 curr_sample = sample[batch_idx:batch_idx+1]
                 
+                # Calculate mask before denormalization
+                curr_mask_norm = create_mask(curr_sample, curr_y_n, threshold=0.1, device=device)
+                
                 # Denormalize images
                 y_n_denorm = denormalize(curr_y_n, mean_image, std_image, device)
                 sample_img_denorm = denormalize(curr_sample, mean_image, std_image, device)
 
-                # Calculate and save mask
-                curr_mask = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
-                plt.imsave(os.path.join(out_path, 'mask', fname), clear_color(curr_mask), cmap='gray')
+                # Calculate mask after denormalization
+                curr_mask_denorm = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
 
-                # Save denormalized reconstruction
+                # Save masks and reconstruction
+                plt.imsave(os.path.join(out_path, 'mask', fname), clear_color(curr_mask_denorm), cmap='gray')
+                plt.imsave(os.path.join(out_path, 'mask_norm', fname), clear_color(curr_mask_norm), cmap='gray')
                 plt.imsave(os.path.join(out_path, 'recon', fname), clear_color(sample_img_denorm), cmap='gray')
 
 
@@ -169,12 +175,13 @@ def main():
 
     # Run evaluation
     if args.if_evaluate:
+        print("out_path: ", out_path)
         auroc = evaluate_all(loader, out_path, save_dir=out_path)
-        logger.info(f"Overall AUROC: {auroc:.4f}")
+        print(f"Overall AUROC: {auroc:.4f}")
 
-    # 保存AUROC
-    with open(os.path.join(out_path, 'auroc.txt'), 'w') as f:
-        f.write(f"AUROC: {auroc:.4f}")
+        # 保存AUROC
+        with open(os.path.join(out_path, 'auroc.txt'), 'w') as f:
+            f.write(f"AUROC: {auroc:.4f}")
 
 if __name__ == '__main__':
     main()

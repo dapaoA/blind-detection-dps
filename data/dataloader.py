@@ -148,7 +148,7 @@ class MVTecDataset(VisionDataset):
         else:
             # test模式：读取所有测试数据
             self.test_path = root
-            parent_dir = os.path.dirname(root)
+            parent_dir = os.path.dirname(os.path.dirname(root))  # Go up two levels
             self.gt_path = os.path.join(parent_dir, 'ground_truth')
             
             self.data_info = []
@@ -158,7 +158,11 @@ class MVTecDataset(VisionDataset):
                     for img_name in sorted(os.listdir(category_path)):
                         if img_name.endswith(('.png', '.jpg', '.jpeg')):
                             img_path = os.path.join(category_path, img_name)
-                            gt_path = os.path.join(self.gt_path, category, img_name)
+                            
+                            # 修改这里：构建对应的mask文件名
+                            base_name = os.path.splitext(img_name)[0]  # 获取不带扩展名的文件名 (如 '001')
+                            mask_name = f"{base_name}_mask.png"  # 构建mask文件名 (如 '001_mask.png')
+                            gt_path = os.path.join(self.gt_path, category, mask_name)
                             
                             self.data_info.append({
                                 'image_path': img_path,
