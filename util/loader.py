@@ -108,15 +108,22 @@ def prepare_dataloader(data_config, model_config, if_train=False, train_config=N
 
 
 def denormalize(img, mean_image, std_image, device):
-    outcome = img * std_image.to(device) + mean_image.to(device)
+    if mean_image is not None and std_image is not None:
+        outcome = img * std_image.to(device) + mean_image.to(device)
+    else:
+        outcome = (img + 1) / 2
     outcome = torch.clamp(outcome, 0, 1)
     return outcome
 
 
 def denormalize_steps(img, mean_image, std_image, device):
-    std_outcome = img * std_image.to(device)
-    mean_outcome = std_outcome + mean_image.to(device)
-    outcome = torch.clamp(mean_outcome, 0, 1)
+    if mean_image is not None and std_image is not None:
+        std_outcome = img * std_image.to(device)
+        mean_outcome = std_outcome + mean_image.to(device)
+        outcome = torch.clamp(mean_outcome, 0, 1)
+    else:
+        outcome = (img + 1) / 2
+        outcome = torch.clamp(outcome, 0, 1)
     return std_outcome, mean_outcome, outcome
 
 
@@ -160,7 +167,35 @@ def create_circle_mask(sample, H, W, device):
     return circle_mask
 
 def create_mask(sample, ref_img, threshold=0.5, device='cuda'):
-    mask = torch.abs(sample.to(device) - ref_img.to(device))
+    sample = sample.to(device)
+    ref_img = ref_img.to(device)
+    
+    # Determine number of channels
+    if sample.dim() == 3:  # shape: [C, H, W]
+        channels = sample.size(0)
+    elif sample.dim() >= 4:  # shape: [N, C, H, W]
+        channels = sample.size(1)
+    else:
+        raise ValueError("Unsupported tensor dimensions: {}".format(sample.dim()))
+    
+    # Compute the difference between sample and reference image
+    diff = sample - ref_img
+    
+    # For grayscale images (channel==1), use absolute difference.
+    # For colored images (channel==3), compute the L2 norm along the channel dimension.
+    if channels == 1:
+        mask = torch.abs(diff)
+    elif channels == 3:
+        if sample.dim() == 3:  # [3, H, W]
+            mask = torch.norm(diff, p=2, dim=0, keepdim=True)  # resulting shape: [1, H, W]
+        else:  # [N, 3, H, W] or similar
+            mask = torch.norm(diff, p=2, dim=1, keepdim=True)  # resulting shape: [N, 1, H, W]
+    else:
+        raise ValueError("Unexpected number of channels: {}. Expected 1 or 3.".format(channels))
+    
+    # Optionally, you can threshold the mask to obtain a binary mask:
+    # mask = (mask > threshold).float()
+    
     return mask
 
 def load_yaml(file_path: str) -> dict:

@@ -25,6 +25,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
 def load_parameters():
     """加载和处理所有配置参数"""
     parser = argparse.ArgumentParser()
@@ -42,6 +43,7 @@ def load_parameters():
     parser.add_argument('--reg_ord', type=int, default=0, choices=[0, 1])
     parser.add_argument('--if_evaluate', type=str2bool, default=False)
     parser.add_argument('--if_inference', type=str2bool, default=False)
+    parser.add_argument('--mask_method', type=str, default='l1', choices=['l1', 'l2', 'create_mask'])
     args = parser.parse_args()
     logger = get_logger()
 
@@ -57,6 +59,7 @@ def load_parameters():
     args.intensity = task_config["intensity"]
 
     return args, logger, model_config, diffusion_config, task_config, data_config
+
 
 def setup_model_and_task(args, logger, model_config, diffusion_config, task_config, device):
 
@@ -93,13 +96,17 @@ def setup_model_and_task(args, logger, model_config, diffusion_config, task_conf
 
     return model, sampler, sample_fn, operator, noiser
 
-def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image):
 
+def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image):
+    """
+    Run inference to generate reconstruction samples and save them.
+    This function only saves the denormalized reconstruction images and
+    collects sample information for optional mask computation.
+    """
     sdps_iteration = 1
     os.makedirs(os.path.join(out_path, 'recon'), exist_ok=True)
-    os.makedirs(os.path.join(out_path, 'mask'), exist_ok=True)
-    os.makedirs(os.path.join(out_path, 'mask_norm'), exist_ok=True)
     os.makedirs(os.path.join(out_path, 'progress'), exist_ok=True)
+    sample_info = []  # List to store tuples: (filename, original tensor, sample tensor)
 
     for i, ref_img_dict in enumerate(loader):
         batch_size = ref_img_dict['image'].shape[0]
@@ -107,36 +114,65 @@ def run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device
         for _ in range(sdps_iteration):
             # Get batch data
             ref_img = ref_img_dict['image'].to(device)
-            y_n = ref_img
             
             # Set initial sample
             x_start = sampler.q_sample(ref_img, t=torch.tensor([0], device=device)).to(device)
             
             # Sample
-            sample = sample_fn(x_start=x_start, measurement=y_n, record=False, 
-                             save_root=out_path, start_t=diffusion_config['start_t'])
+            sample = sample_fn(x_start=x_start, measurement=ref_img, record=False, 
+                                 save_root=out_path, start_t=diffusion_config['start_t'])
             
             # Process each sample in batch
             for batch_idx in range(batch_size):
                 fname = os.path.basename(ref_img_dict['category'][batch_idx]) + '_' + ref_img_dict['name'][batch_idx]
-                
-                curr_y_n = y_n[batch_idx:batch_idx+1]
                 curr_sample = sample[batch_idx:batch_idx+1]
                 
-                # Calculate mask before denormalization
-                curr_mask_norm = create_mask(curr_sample, curr_y_n, threshold=0.1, device=device)
-                
-                # Denormalize images
-                y_n_denorm = denormalize(curr_y_n, mean_image, std_image, device)
+                # Denormalize the reconstructed sample
                 sample_img_denorm = denormalize(curr_sample, mean_image, std_image, device)
 
-                # Calculate mask after denormalization
-                curr_mask_denorm = create_mask(sample_img_denorm, y_n_denorm, threshold=0.1, device=device)
-
-                # Save masks and reconstruction
-                plt.imsave(os.path.join(out_path, 'mask', fname), clear_color(curr_mask_denorm), cmap='gray')
-                plt.imsave(os.path.join(out_path, 'mask_norm', fname), clear_color(curr_mask_norm), cmap='gray')
+                # Save the reconstruction image
                 plt.imsave(os.path.join(out_path, 'recon', fname), clear_color(sample_img_denorm), cmap='gray')
+
+                # Store original and sample for later optional mask computation
+                curr_ref = ref_img[batch_idx:batch_idx+1]
+                sample_info.append((fname, curr_ref, curr_sample))
+                
+    return sample_info
+
+
+def compute_masks(sample_info, out_path, device, mean_image, std_image, mask_method='l1', threshold=0.1):
+    """
+    Compute masks based on the reconstructed sample and the original image.
+    The mask computation method can be selected via the 'mask_method' parameter
+    (e.g., 'l1', 'l2', or others). Two types of masks are computed:
+    one in the normalized space and one after denormalization.
+    """
+    os.makedirs(os.path.join(out_path, 'mask'), exist_ok=True)
+    os.makedirs(os.path.join(out_path, 'mask_norm'), exist_ok=True)
+    
+    for fname, ref_tensor, sample_tensor in sample_info:
+        if mask_method == 'l1':
+            # Compute mask using L1 difference
+            mask_norm = (torch.abs(sample_tensor - ref_tensor) > threshold).float()
+            ref_denorm = denormalize(ref_tensor, mean_image, std_image, device)
+            sample_denorm = denormalize(sample_tensor, mean_image, std_image, device)
+            mask = (torch.abs(sample_denorm - ref_denorm) > threshold).float()
+        elif mask_method == 'l2':
+            # Compute mask using L2 difference
+            mask_norm = (((sample_tensor - ref_tensor) ** 2) > threshold).float()
+            ref_denorm = denormalize(ref_tensor, mean_image, std_image, device)
+            sample_denorm = denormalize(sample_tensor, mean_image, std_image, device)
+            mask = (((sample_denorm - ref_denorm) ** 2) > threshold).float()
+        else:
+            # Fallback to the existing create_mask method
+            mask_norm = create_mask(sample_tensor, ref_tensor, threshold=threshold, device=device)
+            ref_denorm = denormalize(ref_tensor, mean_image, std_image, device)
+            sample_denorm = denormalize(sample_tensor, mean_image, std_image, device)
+            mask = create_mask(sample_denorm, ref_denorm, threshold=threshold, device=device)
+            
+        # Save the computed masks
+        plt.imsave(os.path.join(out_path, 'mask_norm', fname), clear_color(mask_norm.cpu()), cmap='gray')
+        plt.imsave(os.path.join(out_path, 'mask', fname), clear_color(mask.cpu()), cmap='gray')
 
 
 def evaluate_all(loader, out_path, save_dir=None):
@@ -169,9 +205,13 @@ def main():
     # Set random seed
     np.random.seed(123)
 
-    # Run inference
+    # Run inference: generate and save reconstruction images.
+    # The mask computation step is now completely independent.
     if args.if_inference:
-        run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image)
+        sample_info = run_inference(loader, sample_fn, sampler, diffusion_config, out_path, device, mean_image, std_image)
+        # If desired, one can compute masks by calling the new function below.
+        # For example, to use the L1 mask method, uncomment the following line:
+        compute_masks(sample_info, out_path, device, mean_image, std_image, mask_method='l1', threshold=0.1)
 
     # Run evaluation
     if args.if_evaluate:
@@ -182,6 +222,7 @@ def main():
         # 保存AUROC
         with open(os.path.join(out_path, 'auroc.txt'), 'w') as f:
             f.write(f"AUROC: {auroc:.4f}")
+
 
 if __name__ == '__main__':
     main()

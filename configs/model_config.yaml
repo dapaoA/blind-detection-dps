@@ -16,5 +16,5 @@ dropout: 0.0
 resblock_updown: True
 use_fp16: False
 use_new_attention_order: False
-grayscale: True
+grayscale: False
 model_path: results/generated_images/bottle/models/checkpoint_epoch_bottle_3000.pth
