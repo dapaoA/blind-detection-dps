@@ -1,9 +1,12 @@
 # data:
 #   name: leather
 #   root: ./data/leather/train/good/
+
 data:
   name: capsule
-  root: ./data/capsule/train/good/
+  train_root: ./data/capsule/train/
+  test_root: ./data/capsule/test/
+  image_path: None
 
   
 # data:

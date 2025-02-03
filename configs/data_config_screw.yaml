@@ -3,7 +3,9 @@
 #   root: ./data/leather/train/good/
 data:
   name: screw
-  root: ./data/screw/train/good/
+  train_root: ./data/screw/train/
+  test_root: ./data/screw/test/
+  image_path: None
 
   
 # data:

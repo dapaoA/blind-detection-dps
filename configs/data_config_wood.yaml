@@ -3,7 +3,9 @@
 #   root: ./data/leather/train/good/
 data:
   name: wood
-  root: ./data/wood/train/good/
+  train_root: ./data/wood/train/
+  test_root: ./data/wood/test/
+  image_path: None
 
   
 # data:

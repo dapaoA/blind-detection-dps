@@ -127,7 +127,7 @@ class BraTSDataset(VisionDataset):
 
 @register_dataset(name='mvtec')
 class MVTecDataset(VisionDataset):
-    def __init__(self, root: str, transforms: Optional[Callable]=None, mode='train'):
+    def __init__(self, root: str, transforms: Optional[Callable]=None, mode='train', **kwargs):
         super().__init__(root, transforms)
         self.mode = mode
         
@@ -205,75 +205,75 @@ class MVTecDataset(VisionDataset):
 
 @register_dataset(name='bottle')
 class BottleDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='wood')
 class WoodDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='cable')
 class CableDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='capsule')
 class CapsuleDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='carpet')
 class CarpetDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='grid')
 class GridDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='hazelnut')
 class HazelnutDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='leather')
 class LeatherDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='metalnut')
 class MetalNutDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='pill')
 class PillDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='screw')
 class ScrewDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='tile')
 class TileDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='toothbrush')
 class ToothbrushDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='transistor')
 class TransistorDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)
 
 @register_dataset(name='zipper')
 class ZipperDataset(MVTecDataset):
-    def __init__(self, root, transforms=None):
-        super().__init__(root, transforms)
+    def __init__(self, root, transforms=None, **kwargs):
+        super().__init__(root, transforms, **kwargs)

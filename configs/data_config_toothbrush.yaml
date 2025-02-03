@@ -3,7 +3,9 @@
 #   root: ./data/leather/train/good/
 data:
   name: toothbrush
-  root: ./data/toothbrush/train/good/
+  train_root: ./data/toothbrush/train/
+  test_root: ./data/toothbrush/test/
+  image_path: None
 
   
 # data:
