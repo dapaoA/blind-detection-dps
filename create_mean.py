@@ -42,8 +42,10 @@ def compute_and_save_mean_variance(dataset, target_size, save_path, if_grayscale
     var_tensor = torch.zeros((channels, target_size, target_size), device=device)
 
     # 计算均值
-    for batch in tqdm.tqdm(dataloader, desc="Computing mean"):
-        batch = resize_transform(batch).to(device)  # 先调整大小
+    for batch_dict in tqdm.tqdm(dataloader, desc="Computing mean"):
+        # 直接获取batch中的image
+        batch = batch_dict['image'].to(device)  # 已经是batch形式
+        batch = resize_transform(batch)  # 调整大小
         if if_grayscale:
             batch = 0.2989 * batch[:, 0:1] + 0.5870 * batch[:, 1:2] + 0.1140 * batch[:, 2:3]
         mean_tensor += batch.sum(dim=0)
@@ -51,8 +53,9 @@ def compute_and_save_mean_variance(dataset, target_size, save_path, if_grayscale
     mean_tensor /= len(dataset)
 
     # 计算方差
-    for batch in tqdm.tqdm(dataloader, desc="Computing variance"):
-        batch = resize_transform(batch).to(device)  # 先调整大小
+    for batch_dict in tqdm.tqdm(dataloader, desc="Computing variance"):
+        batch = batch_dict['image'].to(device)  # 已经是batch形式
+        batch = resize_transform(batch)  # 调整大小
         if if_grayscale:
             batch = 0.2989 * batch[:, 0:1] + 0.5870 * batch[:, 1:2] + 0.1140 * batch[:, 2:3]
         var_tensor += (batch - mean_tensor).pow(2).sum(dim=0)
@@ -115,15 +118,16 @@ def main():
     transform = transforms.Compose([
         transforms.ToTensor(),
     ])
-    dataset = get_dataset(**data_config, transforms=transform)
+    dataset = get_dataset(root=data_config['train_root'], **data_config, transforms=transform)
 
     # Get image size from the first image in the dataset
     print(len(dataset))
-    sample_image = dataset[0]
-    sample_image.shape[-1]  # Assuming square images
+    sample_dict = dataset[0]
+    sample_image = sample_dict['image']  # 获取字典中的图像张量
+    image_size = sample_image.shape[-1]  # 现在可以获取图像大小了
 
     # Compute and save mean image
-    compute_and_save_mean_variance(dataset, model_config['image_size'], data_config['root'], model_config['grayscale'])
+    compute_and_save_mean_variance(dataset, model_config['image_size'], data_config['train_root'], model_config['grayscale'])
 
 if __name__ == '__main__':
     main()

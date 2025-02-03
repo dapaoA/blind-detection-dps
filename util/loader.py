@@ -10,25 +10,21 @@ from torchvision.transforms import GaussianBlur
 from data.dataloader import get_dataloader, get_dataset
 
 
-def data_transformer_list(mean, variance, size_l, size_w, if_grayscale=False):
+def data_transformer_list(mean=None, variance=None, size_l=None, size_w=None, if_grayscale=False):
     transform_list = [
         transforms.Resize((size_l, size_w)),
         transforms.ToTensor(),
     ]
     if if_grayscale:
-        transform_list.append(transforms.Grayscale())  # 先转灰度
-    transform_list.append(transforms.Normalize(mean, variance))  # 后归一化
+        transform_list.append(transforms.Grayscale())  # Convert to grayscale first
+        
+    if mean is not None and variance is not None:
+        transform_list.append(transforms.Normalize(mean, variance))  # Normalize if mean/var provided
+    else:
+        transform_list.append(transforms.Lambda(lambda x: 2.0 * x - 1.0))  # Scale to [-1,1]
+        
     return transforms.Compose(transform_list)
 
-
-def data_transformer_list_no_normalize(size_l, size_w, if_grayscale=False):
-    transform_list = [
-        transforms.Resize((size_l, size_w)),
-        transforms.ToTensor(),
-        ]
-    if if_grayscale:
-        transform_list.append(transforms.Grayscale())  # Convert to grayscale
-    return transforms.Compose(transform_list)
 
 
 
@@ -64,29 +60,39 @@ def data_transformer_list_augmentation(mean, variance, size_l, size_w, if_graysc
 
 
     # Prepare dataloader
-def prepare_dataloader(data_config, model_config, if_train=False, train_config=None):
-    mean_image_path = os.path.join(data_config['train_root'], "mean_and_std", 'mean.pth')
-    variance_path = os.path.join(data_config['train_root'], "mean_and_std", 'variance.pth')
+def prepare_dataloader(data_config, model_config, if_train=False, train_config=None, if_normalize=False):
+    if if_normalize:
+        mean_image_path = os.path.join(data_config['train_root'], "mean_and_std", 'mean.pth')
+        variance_path = os.path.join(data_config['train_root'], "mean_and_std", 'variance.pth')
+            # Load mean image as grayscale
+        mean_tensor = torch.load(mean_image_path)
+
+        # Load variance and convert to std
+        variance_tensor = torch.load(variance_path)
+        std_tensor = torch.sqrt(variance_tensor)
+
+        # Check if dimensions match
+        if mean_tensor.shape[-1] != model_config['image_size'] or mean_tensor.shape[-2] != model_config['image_size']:
+            raise ValueError(f"Mean image dimensions {mean_tensor.shape[-2:]} do not match model image size {model_config['image_size']}")
+
+        if std_tensor.shape[-1] != model_config['image_size'] or std_tensor.shape[-2] != model_config['image_size']:
+            raise ValueError(f"Std image dimensions {std_tensor.shape[-2:]} do not match model image size {model_config['image_size']}")
+    else:
+        mean_image_path = None
+        variance_path = None
+
     if_grayscale = model_config['grayscale']
 
-    # Load mean image as grayscale
-    mean_tensor = torch.load(mean_image_path)
 
-    # Load variance and convert to std
-    variance_tensor = torch.load(variance_path)
-    std_tensor = torch.sqrt(variance_tensor)
-
-    # Check if dimensions match
-    if mean_tensor.shape[-1] != model_config['image_size'] or mean_tensor.shape[-2] != model_config['image_size']:
-        raise ValueError(f"Mean image dimensions {mean_tensor.shape[-2:]} do not match model image size {model_config['image_size']}")
-
-    if std_tensor.shape[-1] != model_config['image_size'] or std_tensor.shape[-2] != model_config['image_size']:
-        raise ValueError(f"Std image dimensions {std_tensor.shape[-2:]} do not match model image size {model_config['image_size']}")
-
-    transform = data_transformer_list(mean_tensor, std_tensor,
-                                    model_config['image_size'],
-                                    model_config['image_size'],
-                                    if_grayscale=if_grayscale)
+    if if_normalize:
+        transform = data_transformer_list(mean=mean_tensor, variance=std_tensor,
+                                        size_l=model_config['image_size'],
+                                        size_w=model_config['image_size'],
+                                        if_grayscale=if_grayscale)
+    else:
+        transform = data_transformer_list(size_l=model_config['image_size'],
+                                        size_w=model_config['image_size'],
+                                        if_grayscale=if_grayscale)
     if if_train:
         dataset = get_dataset(name=data_config['name'], root=data_config['train_root'], transforms=transform)
     else:
@@ -95,7 +101,10 @@ def prepare_dataloader(data_config, model_config, if_train=False, train_config=N
         loader = get_dataloader(dataset, batch_size=1, num_workers=0, train=if_train)
     else:
         loader = get_dataloader(dataset, batch_size=train_config['batch_size'], num_workers=train_config['num_workers'], train=if_train)
-    return loader, mean_tensor, std_tensor
+    if if_normalize:
+        return loader, mean_tensor, std_tensor
+    else:
+        return loader, None, None
 
 
 def denormalize(img, mean_image, std_image, device):
